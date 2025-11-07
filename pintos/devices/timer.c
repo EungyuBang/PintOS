@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "lib/kernel/list.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -19,6 +20,9 @@
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
+
+/* 자고 있는 thread 관리해줄 list (linked list) */
+static struct list sleep_list;
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -43,6 +47,8 @@ timer_init (void) {
 	outb (0x40, count >> 8);
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+	// week09 : 잠자고 있는 쓰레드들 관리할 리스트 초기화 해준다
+	list_init(&sleep_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -87,15 +93,53 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
+// 9주차 alarm-priority - sleep_list에 넣을때 비교하는 헬퍼 함수
+static bool
+wakeup_tick_less(const struct list_elem *a , const struct list_elem *b, void *aux UNUSED)
+{
+	const struct thread *t_a = list_entry(a, struct thread, elem);
+	const struct thread *t_b = list_entry(b, struct thread, elem);
+
+	return t_a->wakeup_tick < t_b->wakeup_tick;
+}
+
+// 9주차 구현 - alarm
 /* Suspends execution for approximately TICKS timer ticks. */
+/* 문제점 : while 문이라서 이미 자고 있는 쓰레드 계속 방문함 (자고 있는애 계속 확인할 필요가 없음 -> 그냥 sleep_list에 넣어놓고 -> 깨면 ready_list에 넣어버리면 안 되나?)*/
+/* 로직 생각 
+	 1. 우선 들어온 ticks 이 0보다 작거나 같으면 돌릴필요 없죠?
+	 2. 그게 아니라면 sleep_list (queue? linkedlist?) 에다가 넣어버리면 되겠죠? -> 넣을 떄 정렬? 근데 이건 priority 에서 하는거 아닌가? (우선은 정렬 없이 구현)
+	 3. sleep_list에서 깨면 다시 쓰레드 ready_list로 넘겨줘야 함 -> 이거 timer_interrupt 에서
+	 4. 꺠는걸 어떻게 확인할건데? -> clock interrupt 마다 sleep_list 확인? -> 이거 timer_interrupt 에서
+	 5. 근데 핸들러가 interrupt 처리하는 시간보다 ticks 가 더 빠르면 이거 어케함? -> interrupt 잠시 중단...
+*/
 void
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+	// 원래 코드
+	// int64_t start = timer_ticks ();
+	// ASSERT (intr_get_level () == INTR_ON);
+	// while (timer_elapsed (start) < ticks)
+	// // 자는 동안 다른 쓰레드 돌려줘 
+	// 	thread_yield ();
+	
+	// ticks 0 보다 작아? 종료
+	if(ticks <= 0) return;
+	// 현재 CPU에서 이 코드를 실행하고 있는 쓰레드
+	struct thread *cur = thread_current();
+	// old_level 변수는 enum intr_level 타입의 값만 담을 수 있음 -> INTR_ON or INTR_OFF
+	enum intr_level old_level;
 
-	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
-}
+	// intr_disable() -> 1. CPU의 인터럽트를 끔, 2. 인터럽트를 끄기 직전의 상태를 old_level에 담음 
+	old_level = intr_disable();
+	// 잠든 쓰레드의 일어나는 조건은 현재 틱 + sleep 시 받은 ticks
+	cur->wakeup_tick = timer_ticks() + ticks;
+	// 우선 정렬없이 그냥 맨 뒤에 넣음
+	list_insert_ordered(&sleep_list, &cur->elem, wakeup_tick_less, NULL);
+	// 쓰레드 막음 
+	thread_block();
+	// 인터럽트 꺼지기 직전 상태로 다시 복귀
+	intr_set_level (old_level);
+}																								
 
 /* Suspends execution for approximately MS milliseconds. */
 void
@@ -120,12 +164,43 @@ void
 timer_print_stats (void) {
 	printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
-/* Timer interrupt handler. */
+// 9주차 alarm
+/* Timer interrupt handler. -> clock에 의해서 cpu가 현재 실행중이던 작업을 잠시 멈추고 오는 곳 */
+/* 이 함수에서 구현해야 하는 것 
+	 인터럽트가 왔을때, 위애서 만든 sleep_list를 순회하면서 잠에서 깬 쓰레드들 ready_list로 옮겨주는 역할 
+*/
+/* 로직 생각
+	 1. sleep_list의 맨 처음 요소 가져온다
+	 2. 반복문 시작 (끝이 아닐 때 까지)
+	 3. 반복문 돌면서 wakeup_tick 이 현재 tick 보다 작거나 같으면 -> 깨워야 하는 쓰레드 !
+	 4. 현재 쓰레드 다음 쓰레드 저장하고 현재 쓰레드 삭제
+	 5. 아니라면 다음순회 준비 
+*/
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
-	thread_tick ();
+	// sleep list 의 시작 주소 잡아
+	struct list_elem *now_e = list_begin(&sleep_list);
+	// 끝 아닐때까지 순회
+	while (now_e != list_end(&sleep_list)) {
+		// 현재 순회중인 now_e(element) 를 포함하고 있는 thread 의 주소 찾아서 t에 저장
+		struct thread *t = list_entry(now_e, struct thread, elem);
+		// 조건문 - 현재 쓰레드의 wakeup_tick이 현재 쌓인 tick 보다 작거나 같으면  
+		if(t->wakeup_tick <= ticks) {
+			// 현재 리스트에서 삭제 할거니까 깨지는거 방지 위해서 다음 쓰레드 넣어놓고 -> next 의 next 문제?
+			struct list_elem *next = list_next(now_e);
+			// 삭제
+			list_remove(now_e);
+			// 블락 풀어주고
+			thread_unblock(t);
+			// 포인터 이동
+			now_e = next;
+		} else {
+			// 작지 않으면 다음부터
+			now_e = list_next(now_e);
+		}
+	}
+	thread_tick();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

@@ -134,7 +134,10 @@ thread_start (void) {
 }
 
 /* Called by the timer interrupt handler at each timer tick.
-   Thus, this function runs in an external interrupt context. */
+   Thus, this function runs in an external interrupt context. 
+
+	 clock -> timer_intterupt -> 스케줄링 하는 곳
+*/
 void
 thread_tick (void) {
 	struct thread *t = thread_current ();

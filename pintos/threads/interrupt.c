@@ -149,14 +149,21 @@ intr_enable (void) {
 /* Disables interrupts and returns the previous interrupt status. */
 enum intr_level
 intr_disable (void) {
-	enum intr_level old_level = intr_get_level ();
+  
+  /* 1. 확인 및 백업 */
+  // 일단 '현재' 인터럽트 상태(ON이든 OFF든)를 
+  // intr_get_level()로 확인해서 old_level 변수에 '백업'.
+  enum intr_level old_level = intr_get_level ();
 
-	/* Disable interrupts by clearing the interrupt flag.
-	   See [IA32-v2b] "CLI" and [IA32-v3a] 5.8.1 "Masking Maskable
-	   Hardware Interrupts". */
-	asm volatile ("cli" : : : "memory");
+  /* 2. "실행" (끄기) */
+  // 그 다음, 'cli'라는 어셈블리 명령어로 
+  // CPU의 인터럽트 플래그를 '강제로 끕니다(Clear)'.
+  asm volatile ("cli" : : : "memory");
 
-	return old_level;
+  /* 3. "반환" */
+  // 마지막으로, 1번에서 '백업'해 두었던 
+  // 끄기 '직전'의 상태(old_level)를 호출한 곳으로 반환.
+  return old_level;
 }
 
 /* Initializes the interrupt system. */
