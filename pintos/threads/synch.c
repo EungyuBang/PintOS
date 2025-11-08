@@ -32,6 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -65,8 +66,9 @@ sema_down (struct semaphore *sema) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
+	// 9주차 sema_down waiter 줄 우선순위 정렬
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered(&sema->waiters, &thread_current()->elem, compare_priority, NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -104,17 +106,41 @@ sema_try_down (struct semaphore *sema) {
    This function may be called from an interrupt handler. */
 void
 sema_up (struct semaphore *sema) {
-	enum intr_level old_level;
+    enum intr_level old_level;
+    struct thread *t = NULL;
+    bool need_yield = false;
 
-	ASSERT (sema != NULL);
+    ASSERT (sema != NULL);
 
-	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
-	sema->value++;
-	intr_set_level (old_level);
+    old_level = intr_disable ();
+
+    if (!list_empty (&sema->waiters)) {
+        /* waiters는 이미 sema_down에서 우선순위 순으로 삽입되어 있어야 한다.
+           따라서 맨 앞을 꺼내면 가장 높은 우선순위 */
+        t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+        thread_unblock(t);
+    }
+
+    sema->value++;
+    intr_set_level (old_level);
+
+    /* 깨운 스레드(t)가 현재 스레드보다 우선순위가 높으면 양보.
+       단, 인터럽트 컨텍스트일 때는 즉시 yield 하면 안되므로
+       intr_yield_on_return()을 사용한다. */
+    if (t != NULL) {
+        if (intr_context()) {
+            /* 현재 인터럽트 핸들러 내부라면, 인터럽트 리턴 시 스케줄링 예약 */
+            intr_yield_on_return();
+        } else {
+            /* 일반 문맥이면 현재와 비교하여 필요하면 즉시 양보 */
+            struct thread *cur_thread = thread_current();
+            if (t->priority > cur_thread->priority)
+                thread_yield();
+        }
+    }
 }
+
+
 
 static void sema_test_helper (void *sema_);
 

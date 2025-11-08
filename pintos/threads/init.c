@@ -64,6 +64,7 @@ static void print_stats (void);
 
 int main (void) NO_RETURN;
 
+// 핀토스 메인 여기 있음
 /* Pintos main program. */
 int
 main (void) {

@@ -62,6 +62,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+bool compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -80,13 +81,13 @@ static tid_t allocate_tid (void);
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
 // 9주차 alarm-priority 우선 순위로 정렬해주는 헬퍼 함수
-static bool
-priority_less_func(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+bool
+compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
-	const struct thread *t_a = list_entry(a, struct thread, elem);
-	const struct thread *t_b = list_entry(b, struct thread, elem);
+	const struct thread *ta = list_entry(a, struct thread, elem);
+	const struct thread *tb = list_entry(b, struct thread, elem);
 
-	return t_a->priority > t_b->priority;
+	return ta->priority > tb->priority;
 }
 
 /* Initializes the threading system by transforming the code
@@ -220,6 +221,11 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	// 쓰레드 만들고 ready_list에 넣는 곳
 	thread_unblock (t);
+	
+	// 지금 만들어진 쓰레드 우선순위가 지금 현재 실행중인 쓰레드의 우선순위보다 높아? -> t 실행되게 양보해라(yield())
+	if (t->priority > thread_current()->priority) {
+		thread_yield();
+	}
 
 	return tid;
 }
@@ -251,14 +257,12 @@ thread_block (void) {
 void
 thread_unblock (struct thread *t) {
 	enum intr_level old_level;
-
 	ASSERT (is_thread (t));
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	// 9주차 , unblock 되어서 ready_list로 들어갈 때 우선 순위 맞춰서 들어가라
-	list_insert_ordered(&ready_list, &t->elem, priority_less_func, NULL);
 	t->status = THREAD_READY;
-	intr_set_level (old_level);	
+	list_insert_ordered(&ready_list, &t->elem, compare_priority, NULL);
+	intr_set_level (old_level);
 }
 
 /* Returns the name of the running thread. */
@@ -321,15 +325,36 @@ thread_yield (void) {
 	if (curr != idle_thread)
 	// 9주차 여기 수정
 	// CPU를 양보하고 ready_list 로 돌아갈 때, 우선순위에 맞춰서 줄 서라 
-		list_insert_ordered(&ready_list, &curr->elem, priority_less_func, NULL);
+		list_insert_ordered(&ready_list, &curr->elem, compare_priority, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
+// 9주차 현재 쓰레드의 우선순위가 변경되었다면, yield 호출 해야함
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+  
+  bool yield_needed = false; 
+  // 인터럽트 OFF
+  enum intr_level old_level = intr_disable();
+  struct thread *cur_thread = thread_current();
+  cur_thread->priority = new_priority;
+  
+  // 인터럽트 꺼놓고 ready_list 확인
+  if (!list_empty(&ready_list)) {
+    struct thread *front_thread = list_entry(list_front(&ready_list), struct thread, elem);
+    if (cur_thread->priority < front_thread->priority) {
+      yield_needed = true;
+    }
+  }
+  // 확인이 끝났으니 인터럽트를 먼저 켜버려.
+  intr_set_level(old_level);
+  
+  // 안전한 상태에서 yield 실행해야 할지 말아야 할지 결정
+  if (yield_needed) {
+    thread_yield(); // (인터럽트 ON 상태에서 호출되므로 안전)
+  }
 }
 
 /* Returns the current thread's priority. */

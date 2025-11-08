@@ -95,12 +95,12 @@ timer_elapsed (int64_t then) {
 
 // 9주차 alarm-priority - sleep_list에 넣을때 비교하는 헬퍼 함수
 static bool
-wakeup_tick_less(const struct list_elem *a , const struct list_elem *b, void *aux UNUSED)
+comapare_tick(const struct list_elem *a , const struct list_elem *b, void *aux UNUSED)
 {
-	const struct thread *t_a = list_entry(a, struct thread, elem);
-	const struct thread *t_b = list_entry(b, struct thread, elem);
+	const struct thread *ta = list_entry(a, struct thread, elem);
+	const struct thread *tb = list_entry(b, struct thread, elem);
 
-	return t_a->wakeup_tick < t_b->wakeup_tick;
+	return ta->wakeup_tick < tb->wakeup_tick;
 }
 
 // 9주차 구현 - alarm
@@ -125,16 +125,16 @@ timer_sleep (int64_t ticks) {
 	// ticks 0 보다 작아? 종료
 	if(ticks <= 0) return;
 	// 현재 CPU에서 이 코드를 실행하고 있는 쓰레드
-	struct thread *cur = thread_current();
+	struct thread *cur_thread = thread_current();
 	// old_level 변수는 enum intr_level 타입의 값만 담을 수 있음 -> INTR_ON or INTR_OFF
 	enum intr_level old_level;
 
 	// intr_disable() -> 1. CPU의 인터럽트를 끔, 2. 인터럽트를 끄기 직전의 상태를 old_level에 담음 
 	old_level = intr_disable();
 	// 잠든 쓰레드의 일어나는 조건은 현재 틱 + sleep 시 받은 ticks
-	cur->wakeup_tick = timer_ticks() + ticks;
+	cur_thread->wakeup_tick = timer_ticks() + ticks;
 	// 깨는데 남은 시간 제일 적게 남은애 제일 앞으로 
-	list_insert_ordered(&sleep_list, &cur->elem, wakeup_tick_less, NULL);
+	list_insert_ordered(&sleep_list, &cur_thread->elem, comapare_tick, NULL);
 	// 쓰레드 막음 
 	thread_block();
 	// 인터럽트 꺼지기 직전 상태로 다시 복귀
