@@ -79,6 +79,16 @@ static tid_t allocate_tid (void);
 // setup temporal gdt first.
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
+// 9주차 alarm-priority 우선 순위로 정렬해주는 헬퍼 함수
+static bool
+priority_less_func(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	const struct thread *t_a = list_entry(a, struct thread, elem);
+	const struct thread *t_b = list_entry(b, struct thread, elem);
+
+	return t_a->priority > t_b->priority;
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -208,6 +218,7 @@ thread_create (const char *name, int priority,
 	t->tf.eflags = FLAG_IF;
 
 	/* Add to run queue. */
+	// 쓰레드 만들고 ready_list에 넣는 곳
 	thread_unblock (t);
 
 	return tid;
@@ -235,17 +246,19 @@ thread_block (void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+	 // 9주차
+	 // timer.c 에서 sleep_list에서 깨워야 하는애들 thread_unblock 호출 -> ready_list로 넘어올 때 여기서 정렬해줘야 함
 void
 thread_unblock (struct thread *t) {
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
-
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// 9주차 , unblock 되어서 ready_list로 들어갈 때 우선 순위 맞춰서 들어가라
+	list_insert_ordered(&ready_list, &t->elem, priority_less_func, NULL);
 	t->status = THREAD_READY;
-	intr_set_level (old_level);
+	intr_set_level (old_level);	
 }
 
 /* Returns the name of the running thread. */
@@ -306,7 +319,9 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+	// 9주차 여기 수정
+	// CPU를 양보하고 ready_list 로 돌아갈 때, 우선순위에 맞춰서 줄 서라 
+		list_insert_ordered(&ready_list, &curr->elem, priority_less_func, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }

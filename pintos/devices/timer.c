@@ -47,7 +47,7 @@ timer_init (void) {
 	outb (0x40, count >> 8);
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-	// week09 : 잠자고 있는 쓰레드들 관리할 리스트 초기화 해준다
+	// 9주차 : 잠자고 있는 쓰레드들 관리할 리스트 초기화 해준다
 	list_init(&sleep_list);
 }
 
@@ -108,7 +108,7 @@ wakeup_tick_less(const struct list_elem *a , const struct list_elem *b, void *au
 /* 문제점 : while 문이라서 이미 자고 있는 쓰레드 계속 방문함 (자고 있는애 계속 확인할 필요가 없음 -> 그냥 sleep_list에 넣어놓고 -> 깨면 ready_list에 넣어버리면 안 되나?)*/
 /* 로직 생각 
 	 1. 우선 들어온 ticks 이 0보다 작거나 같으면 돌릴필요 없죠?
-	 2. 그게 아니라면 sleep_list (queue? linkedlist?) 에다가 넣어버리면 되겠죠? -> 넣을 떄 정렬? 근데 이건 priority 에서 하는거 아닌가? (우선은 정렬 없이 구현)
+	 2. 그게 아니라면 sleep_list (queue? linkedlist?) 에다가 넣어버리면 되겠죠? -> 넣을 때 정렬? 근데 이건 priority 에서 하는거 아닌가? (우선은 정렬 없이 구현)
 	 3. sleep_list에서 깨면 다시 쓰레드 ready_list로 넘겨줘야 함 -> 이거 timer_interrupt 에서
 	 4. 꺠는걸 어떻게 확인할건데? -> clock interrupt 마다 sleep_list 확인? -> 이거 timer_interrupt 에서
 	 5. 근데 핸들러가 interrupt 처리하는 시간보다 ticks 가 더 빠르면 이거 어케함? -> interrupt 잠시 중단...
@@ -133,13 +133,13 @@ timer_sleep (int64_t ticks) {
 	old_level = intr_disable();
 	// 잠든 쓰레드의 일어나는 조건은 현재 틱 + sleep 시 받은 ticks
 	cur->wakeup_tick = timer_ticks() + ticks;
-	// 우선 정렬없이 그냥 맨 뒤에 넣음
+	// 깨는데 남은 시간 제일 적게 남은애 제일 앞으로 
 	list_insert_ordered(&sleep_list, &cur->elem, wakeup_tick_less, NULL);
 	// 쓰레드 막음 
 	thread_block();
 	// 인터럽트 꺼지기 직전 상태로 다시 복귀
 	intr_set_level (old_level);
-}																								
+}
 
 /* Suspends execution for approximately MS milliseconds. */
 void
@@ -179,25 +179,18 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
-	// sleep list 의 시작 주소 잡아
-	struct list_elem *now_e = list_begin(&sleep_list);
-	// 끝 아닐때까지 순회
-	while (now_e != list_end(&sleep_list)) {
-		// 현재 순회중인 now_e(element) 를 포함하고 있는 thread 의 주소 찾아서 t에 저장
+	
+	// sleep_list 비어있지 않을때까지 순회
+	while (!list_empty(&sleep_list)) {
+		// sleep_list의 맨 처음 elem 잡아서 now_e에 담고 
+		struct list_elem *now_e = list_begin(&sleep_list);
+		// 현재 element로 thread 주소 잡기
 		struct thread *t = list_entry(now_e, struct thread, elem);
-		// 조건문 - 현재 쓰레드의 wakeup_tick이 현재 쌓인 tick 보다 작거나 같으면  
 		if(t->wakeup_tick <= ticks) {
-			// 현재 리스트에서 삭제 할거니까 깨지는거 방지 위해서 다음 쓰레드 넣어놓고 -> next 의 next 문제?
-			struct list_elem *next = list_next(now_e);
-			// 삭제
-			list_remove(now_e);
-			// 블락 풀어주고
+			list_pop_front(&sleep_list);
 			thread_unblock(t);
-			// 포인터 이동
-			now_e = next;
 		} else {
-			// 작지 않으면 다음부터
-			now_e = list_next(now_e);
+			break;
 		}
 	}
 	thread_tick();
