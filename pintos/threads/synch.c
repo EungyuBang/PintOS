@@ -32,6 +32,24 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* One semaphore in a list. */
+struct semaphore_elem {
+	struct list_elem elem;              /* List element. */
+	struct semaphore semaphore;         /* This semaphore. */
+	int priority;
+};
+
+/* cond_wait용 semaphore_elem 우선순위 비교 */
+static bool
+compare_priority_cond		(const struct list_elem *a,
+                         const struct list_elem *b,
+                         void *aux UNUSED)
+{
+    struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
+    struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
+    return sa->priority > sb->priority;
+}
+
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -108,7 +126,6 @@ void
 sema_up (struct semaphore *sema) {
     enum intr_level old_level;
     struct thread *t = NULL;
-    bool need_yield = false;
 
     ASSERT (sema != NULL);
 
@@ -127,12 +144,13 @@ sema_up (struct semaphore *sema) {
     /* 깨운 스레드(t)가 현재 스레드보다 우선순위가 높으면 양보.
        단, 인터럽트 컨텍스트일 때는 즉시 yield 하면 안되므로
        intr_yield_on_return()을 사용한다. */
+			 // 이 부분 로직 다시 생각해보기
     if (t != NULL) {
         if (intr_context()) {
             /* 현재 인터럽트 핸들러 내부라면, 인터럽트 리턴 시 스케줄링 예약 */
             intr_yield_on_return();
         } else {
-            /* 일반 문맥이면 현재와 비교하여 필요하면 즉시 양보 */
+            /* 현재와 비교하여 필요하면 즉시 양보 */
             struct thread *cur_thread = thread_current();
             if (t->priority > cur_thread->priority)
                 thread_yield();
@@ -262,11 +280,7 @@ lock_held_by_current_thread (const struct lock *lock) {
 	return lock->holder == thread_current ();
 }
 
-/* One semaphore in a list. */
-struct semaphore_elem {
-	struct list_elem elem;              /* List element. */
-	struct semaphore semaphore;         /* This semaphore. */
-};
+
 
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
@@ -307,8 +321,10 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
 
+	
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+	waiter.priority = thread_current()->priority;
+	list_insert_ordered(&cond->waiters, &waiter.elem, compare_priority_cond, NULL);
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);

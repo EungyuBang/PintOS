@@ -8,6 +8,7 @@
 struct semaphore {
 	unsigned value;             /* Current value. */
 	struct list waiters;        /* List of waiting threads. */
+	int priority;								// 9주차 
 };
 
 void sema_init (struct semaphore *, unsigned value);
@@ -18,8 +19,8 @@ void sema_self_test (void);
 
 /* Lock. */
 struct lock {
-	struct thread *holder;      /* Thread holding lock (for debugging). */
-	struct semaphore semaphore; /* Binary semaphore controlling access. */
+	struct thread *holder;      /* Thread holding lock (for debugging). -> 현재 락을 잡고 있는 쓰레드 */
+	struct semaphore semaphore; /* Binary semaphore controlling access. -> 락 자체 역할 (0이면 잠김, 1이면 열림 이런식으로) */
 };
 
 void lock_init (struct lock *);
