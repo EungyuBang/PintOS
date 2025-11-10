@@ -117,7 +117,7 @@ donate_priority (struct thread *receiver, int donated_priority)
     depth++;
   }
 }
-// 락 하나 다른 쓰레드에게 돌려주고 우선순위 재계산 -> 후원자 명단에 또다른 락에 대한 donate 있다면 그 우선순위가 다시 우선순위가 되어야 할 수도 있음.
+// 락 하나 다른 쓰레드에게 돌려주고 우선순위 재계산 -> 후원자 명단에 또다른 락에 대한 donate 있다면 그 우선순위가 다시 쓰레드의 우선순위가 되어야 할 수도 있음.
 void
 recalculate_priority (struct thread *t) 
 {
