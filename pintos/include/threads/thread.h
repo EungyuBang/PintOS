@@ -96,6 +96,10 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 	int64_t wakeup_tick;								/* 9주차 : thread 구조체에 wakeup_tick 추가 */
 
+	int original_priority ;
+	struct lock *waiting_for_lock; // 쓰레드가 공유자원 접근 후 잠들면서 필요로 하는 락 저장
+	struct list donations_list; // 우선순위 기부해준 쓰레드 리스트
+	struct list_elem donation_elem; // 기부하는 쓰레드의 elem
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -145,7 +149,11 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-//9주차 compare_priority
+// 9주차 compare_priority
 bool compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+// 9주차 thread_donate_priority
+void donate_priority (struct thread *receiver, int donated_priority);
+void recalculate_priority (struct thread *t);
+
 
 #endif /* threads/thread.h */

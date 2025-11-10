@@ -90,6 +90,60 @@ compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux
 	return ta->priority > tb->priority;
 }
 
+// 9주차 thread_donate_priority
+// 반복적으로 타는 이유 -> 우선순위를 양도 받은 쓰레드(쓰레드A) 가 또 다른 락(lock_b) 을 필요로 함 -> 쓰레드 B한테도 우선순위 줘버려서 빨리 락 반납하게 
+void
+donate_priority (struct thread *receiver, int donated_priority) 
+{
+  int depth = 0;
+  struct thread *current_holder = receiver; // 인자로 받은 우선순위 받았던 쓰레드부터 시작
+  // 8단계 깊이 제한 (순환 방지)
+  while (current_holder != NULL && depth < 8) 
+  {
+    if (current_holder->priority >= donated_priority) {
+      break; 
+    }
+
+    // 1. L의 우선순위를 H의 우선순위로 갱신
+    current_holder->priority = donated_priority;
+
+    // 2. L이 기다리는 다음 놈(K)을 찾음
+    if (current_holder->waiting_for_lock == NULL) {
+      break; // 체인의 끝 (K가 없음)
+    }
+    
+    // 3. 다음 루프를 위해 K를 준비시킴
+    current_holder = current_holder->waiting_for_lock->holder;
+    depth++;
+  }
+}
+// 락 하나 다른 쓰레드에게 돌려주고 우선순위 재계산 -> 후원자 명단에 또다른 락에 대한 donate 있다면 그 우선순위가 다시 우선순위가 되어야 할 수도 있음.
+void
+recalculate_priority (struct thread *t) 
+{
+	// 우선 원래 우선순위로 돌아오고
+	int new_priority = t->original_priority;
+	// 기부 리스트가 비어있지 않음 -> 다른 공유 자원에 접근 가능한 락도 얘가 들고있어서 , 다른 쓰레드가 이 쓰레드를 기다리고 있는거임
+	if(!(list_empty(&t->donations_list))) {
+		// 최소로 설정하고
+		int max_donation = PRI_MIN;
+		for(struct list_elem *e = list_begin(&t->donations_list); e != list_end(&t->donations_list); e = list_next(e)) {
+			struct thread *donor = list_entry(e, struct thread, donation_elem);
+			// 반복문 돌면서 기부자 명단에 더 큰 우선순위 값 있는지 판단
+			if(max_donation < donor->priority) {
+				max_donation = donor->priority;
+			}
+		}
+		// 기부자 명단 전부 순회한 값중 가장 큰 값이 원래 우선순위 보다 크면 그 값으로 우선순위 재계산
+		if(max_donation > new_priority) {
+			new_priority = max_donation;
+		}
+	}
+	// 해당 쓰레드 우선순위 재계산 (원래 값일수도 있고, 또 다른 락 요청이 와서 더 큰 우선순위 일 수 있음)
+	t->priority = new_priority;
+}
+
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -332,28 +386,54 @@ thread_yield (void) {
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 // 9주차 현재 쓰레드의 우선순위가 변경되었다면, yield 호출 해야함
+// void
+// thread_set_priority (int new_priority) {
+//   bool yield_needed = false; 
+//   // 인터럽트 OFF
+//   enum intr_level old_level = intr_disable();
+//   struct thread *cur_thread = thread_current();
+//   cur_thread->priority = new_priority;  
+//   // 인터럽트 꺼놓고 ready_list 확인
+//   if (!list_empty(&ready_list)) {
+//     struct thread *front_thread = list_entry(list_front(&ready_list), struct thread, elem);
+//     if (cur_thread->priority < front_thread->priority) {
+//       yield_needed = true;
+//     }
+//   }
+//   // 확인이 끝났으니 인터럽트를 먼저 켜버려.
+//   intr_set_level(old_level);
+//   // 안전한 상태에서 yield 실행해야 할지 말아야 할지 결정
+//   if (yield_needed) {
+//     thread_yield(); // (인터럽트 ON 상태에서 호출되므로 안전)
+//   }
+// }
 void
 thread_set_priority (int new_priority) {
-  
-  bool yield_needed = false; 
-  // 인터럽트 OFF
   enum intr_level old_level = intr_disable();
+
   struct thread *cur_thread = thread_current();
-  cur_thread->priority = new_priority;
   
-  // 인터럽트 꺼놓고 ready_list 확인
+  // '원래' 우선순위(original_priority)만 갱신.
+  cur_thread->original_priority = new_priority;
+
+  // '실제' 우선순위(priority)를 재계산.
+  //    (기부받은 값을 포함해 max()로 다시 계산)
+  recalculate_priority(cur_thread); // 
+
+  // 우선순위가 낮아져 양보가 필요한지 확인.
+  bool yield_needed = false;
   if (!list_empty(&ready_list)) {
     struct thread *front_thread = list_entry(list_front(&ready_list), struct thread, elem);
     if (cur_thread->priority < front_thread->priority) {
       yield_needed = true;
     }
   }
-  // 확인이 끝났으니 인터럽트를 먼저 켜버려.
-  intr_set_level(old_level);
   
-  // 안전한 상태에서 yield 실행해야 할지 말아야 할지 결정
+  intr_set_level(old_level);
+
+  // 필요하면 CPU를 양보.
   if (yield_needed) {
-    thread_yield(); // (인터럽트 ON 상태에서 호출되므로 안전)
+    thread_yield();
   }
 }
 
@@ -451,6 +531,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	// 9주차 우선순위 계산을 위한 초기화
+	t->original_priority = priority;
+  t->waiting_for_lock = NULL;
+  list_init (&t->donations_list);
 	t->magic = THREAD_MAGIC;
 }
 
