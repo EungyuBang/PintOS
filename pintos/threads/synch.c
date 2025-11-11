@@ -287,12 +287,12 @@ lock_acquire (struct lock *lock) {
    struct thread *curr_thread = thread_current ();
 
    
-   if (lock->holder != NULL) { // 다른 놈이 가지고 있어서 기다려야 되는 상황이면면
+   if (lock->holder != NULL) { // 다른 놈이 가지고 있어서 기다려야 되는 상황이면
       curr_thread->waiting_lock = lock; // 기다리는 락에 넣고
       donate_priority(lock->holder); // 필요하면 도네이션이 일어나도록
    }
 	sema_down (&lock->semaphore); 
-	lock->holder = curr_thread; // 내가 락 홀드드
+	lock->holder = curr_thread; // 내가 락 홀드
    curr_thread->waiting_lock = NULL; // 기다리는 락 제거
    list_push_back(&curr_thread->holding_locks, &lock->elem); // 내가 가진 락들 리스트에 넣어줌
 }
@@ -304,7 +304,7 @@ void donate_priority(struct thread *t) {
 
       //현재 스레드가 있는 리스트에서 재정렬 필요
       if (t->status == THREAD_READY) {
-         enum intr_level old_level = intr_disable(); // 레디 리스트 건드리는 거니 인터럽트 차단단
+         enum intr_level old_level = intr_disable(); // 레디 리스트 건드리는 거니 인터럽트 차단
          thread_reorder_ready_list(t);
          intr_set_level(old_level);
       }
