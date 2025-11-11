@@ -271,7 +271,7 @@ lock_acquire (struct lock *lock) {
 	if(t != NULL) {
 		// cur_thread는 현재 CPU 에서 실행중인 쓰레드
 		struct thread *cur_thread = thread_current();
-		// 현재 쓰레드가 락 보유중인 쓰레드보다 우선순위가 높다면 -> 우선 순위 기부
+		// 현재 쓰레드가 락 보유중인 쓰레드보다 우선순위가 높다면 -> 우선 순위 기부 실행
 		if(cur_thread->priority > t->priority) {
 			// 현재 실행중인 쓰레드가 기다리는 락 설정 (무슨 락이 있어야 재실행 가능한지 알 수 있으니까)
 			cur_thread->waiting_for_lock = lock;
