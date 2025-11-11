@@ -41,9 +41,7 @@ struct semaphore_elem {
 
 /* cond_wait용 semaphore_elem 우선순위 비교 */
 static bool
-compare_priority_cond		(const struct list_elem *a,
-                         const struct list_elem *b,
-                         void *aux UNUSED)
+compare_priority_cond(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
     struct semaphore_elem *sa = list_entry(a, struct semaphore_elem, elem);
     struct semaphore_elem *sb = list_entry(b, struct semaphore_elem, elem);
@@ -334,7 +332,7 @@ lock_release (struct lock *lock) {
 			e = next;
 		}
 		else {
-			e = list_next(e);
+			e = list_next(e); 
 		} 
 	}
 	// 리스트에서 우선순위 후원했던 쓰레드 삭제됨 -> 양도 받은 쓰레드 우선순위 재계산 -> 단순히 이전 우선순위로 돌아가는게 아님...
