@@ -100,19 +100,20 @@ donate_priority (struct thread *receiver, int donated_priority)
   // 8단계 깊이 제한 (순환 방지)
   while (current_holder != NULL && depth < 8) 
   {
+		// 기부받을 쓰레드의 우선순위가 기부된 우선순위보다 높다? -> 변동 필요없음
     if (current_holder->priority >= donated_priority) {
       break; 
     }
 
-    // 1. L의 우선순위를 H의 우선순위로 갱신
+    // 기부 받을 쓰레드의 우선순위를 기부 받은 우선순위로 갱신
     current_holder->priority = donated_priority;
 
-    // 2. L이 기다리는 다음 놈(K)을 찾음
+    // 기부 받은 쓰레드도 실행되기 위한 락이 있을 수 있으니 확인
     if (current_holder->waiting_for_lock == NULL) {
-      break; // 체인의 끝 (K가 없음)
+      break; // 체인의 끝 
     }
     
-    // 3. 다음 루프를 위해 K를 준비시킴
+    // current_holder -> 현재 우선순위를 기부 받은 쓰레드가 실행되기 위해 필요한 락의 홀더(쓰레드)로 변경
     current_holder = current_holder->waiting_for_lock->holder;
     depth++;
   }
@@ -123,7 +124,7 @@ recalculate_priority (struct thread *t)
 {
 	// 우선 원래 우선순위로 돌아오고
 	int new_priority = t->original_priority;
-	// 기부 리스트가 비어있지 않음 -> 다른 공유 자원에 접근 가능한 락도 얘가 들고있어서 , 다른 쓰레드가 이 쓰레드를 기다리고 있는거임
+	// 기부 리스트가 비어있지 않음 -> 다른 공유 자원에 접근 가능한 락도 얘가 들고있어서 , 다른 쓰레드가 이 쓰레드를 기다리고 있는거임 
 	if(!(list_empty(&t->donations_list))) {
 		// 최소로 설정하고
 		int max_donation = PRI_MIN;

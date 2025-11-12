@@ -269,7 +269,7 @@ lock_acquire (struct lock *lock) {
 	// t는 현재 lock 들고 있는 thread
 	struct thread *t = lock->holder;
 	if(t != NULL) {
-		// cur_thread는 현재 CPU 에서 실행중인 쓰레드
+		// cur_thread는 현재 CPU 에서 실행중인 쓰레드 (공유자원에 접근하기 위해서 lock_acquire 함수에 진입)
 		struct thread *cur_thread = thread_current();
 		// 현재 쓰레드가 락 보유중인 쓰레드보다 우선순위가 높다면 -> 우선 순위 기부 실행
 		if(cur_thread->priority > t->priority) {
