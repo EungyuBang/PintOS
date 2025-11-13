@@ -409,7 +409,6 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
-	// 10주차 구현 포인트 argument 파싱 부분 
 	if (!setup_stack (if_))
 		goto done;
 
@@ -418,6 +417,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	 // argument_passing 구현하는 곳
 
 	success = true;
 
