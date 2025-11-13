@@ -328,7 +328,6 @@ void timer_print_stats (void) {
 
 // ⭐️ MLFQS 헬퍼 함수들을 호출해야 하므로
 //    파일 상단에 #include "threads/thread.h"가 필요합니다.
-#include "threads/thread.h" 
 
 /* ... (다른 includes) ... */
 
