@@ -1,3 +1,4 @@
+// pintos 메인 시작되는 곳
 #include "threads/init.h"
 #include <console.h>
 #include <debug.h>
@@ -236,6 +237,7 @@ parse_options (char **argv) {
 }
 
 /* Runs the task specified in ARGV[1]. */
+// 10주차
 static void
 run_task (char **argv) {
 	const char *task = argv[1];
@@ -245,7 +247,8 @@ run_task (char **argv) {
 	if (thread_tests){
 		run_test (task);
 	} else {
-		process_wait (process_create_initd (task));
+		// 10주차 fork 시켜놓고 원래 프로그램이 죽기 전에 fork 된 프로그램이 돌아가게 커널에서 기다려야 한다
+		process_wait (process_create_initd (task));s
 	}
 #else
 	run_test (task);

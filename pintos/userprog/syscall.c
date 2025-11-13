@@ -38,6 +38,7 @@ syscall_init (void) {
 }
 
 /* The main system call interface */
+// 10주차 system call handler 만들어야 하는 곳
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.

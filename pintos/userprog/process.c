@@ -199,6 +199,7 @@ process_exec (void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
+// 10주차 새로운게 다 돌아갈 때 까지 기다리게
 int
 process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
@@ -408,6 +409,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
+	// 10주차 구현 포인트 argument 파싱 부분 
 	if (!setup_stack (if_))
 		goto done;
 
