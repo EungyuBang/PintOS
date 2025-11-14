@@ -38,6 +38,7 @@ process_init (void) {
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
+// filename 은 'programname args ~' 이런식
 tid_t
 process_create_initd (const char *file_name) {
 	char *fn_copy;
@@ -48,9 +49,15 @@ process_create_initd (const char *file_name) {
 	fn_copy = palloc_get_page (0);
 	if (fn_copy == NULL)
 		return TID_ERROR;
+	// fn_copy = 'programname args ~'
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	// file_name 파싱 하는 부분 'programname args' -> 'programname' 됨
+	// char *ptr;
+	// __strtok_r(file_name, " ", &ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
+	// 프로그램을 실행할 쓰레드를 하나 만들고 , 그 쓰레드는 바로 initd 실행 (fn_copy를 인자로 받아서 -> fn_copy에는 programname args 다 들어있음)
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
@@ -63,9 +70,9 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-
+	// 초기화 하고
 	process_init ();
-	// 여기서 process_exec 실행
+	// 여기서 process_exec 실행 -> 자기 자신(쓰레드) 를 사용자 프로그램으로 변환
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -161,35 +168,41 @@ error:
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 // 프로세스 익스큐트
+/* 현재 실행 중인 프로세스(커널 스레드)를 'f_name'의 
+ * 새 유저 프로그램으로 교체(transform)합니다.
+ * 이 함수는 실패 시 -1을 반환하며, 성공 시 리턴하지 않습니다. */
 int
 process_exec (void *f_name) {
-	char *file_name = f_name;
-	bool success;
+  // f_name은 "program_name args..." 형태의 '명령어 전체' 문자열.
+  char *file_name = f_name;
+  bool success;
 
-	/* We cannot use the intr_frame in the thread structure.
-	 * This is because when current thread rescheduled,
-	 * it stores the execution information to the member. */
-	struct intr_frame _if;
-	_if.ds = _if.es = _if.ss = SEL_UDSEG;
-	_if.cs = SEL_UCSEG;
-	_if.eflags = FLAG_IF | FLAG_MBS;
+  /* 1. 유저 모드 진입을 위한 '임시' CPU 레지스터(intr_frame)를 설정. */
+  struct intr_frame _if;
+  _if.ds = _if.es = _if.ss = SEL_UDSEG;
+  _if.cs = SEL_UCSEG;
+  _if.eflags = FLAG_IF | FLAG_MBS; // 인터럽트 활성화
 
-	/* We first kill the current context */
-	process_cleanup ();
+  /* 2. 현재 컨텍스트(메모리 공간, pml4)를 정리(파괴)하여
+   * 새 유저 프로세스로 '변신'할 준비를 함. */
+  process_cleanup ();
 
-	/* And then load the binary */
-	success = load (file_name, &_if);
+  /* 3. load() 함수를 호출하여 새 프로그램을 메모리에 적재. */
+  success = load (file_name, &_if);
 
-	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
-		return -1;
+  /* 4. f_name은 process_create_initd에서 할당(palloc)한 복사본이므로,
+   * 로드가 끝났으니 해당 메모리 페이지를 해제. */
+  palloc_free_page (file_name);
+  if (!success)
+    return -1; // 로드 실패 (예: 파일 없음, 메모리 부족 등)
 
-	/* Start switched process. */
-	do_iret (&_if);
-	NOT_REACHED ();
+  /* 5. do_iret()을 호출하여 유저 모드로 전환.
+   * CPU 레지스터가 _if에 설정된 값(rip, rsp 등)으로 갱신되며,
+   * 유저 프로그램의 진입점(rip)에서 실행을 시작.
+   * 이 함수는 커널로 돌아오지 않음. */
+  do_iret (&_if);
+  NOT_REACHED ();
 }
-
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -206,6 +219,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while(1) {}
 	return -1;
 }
 
@@ -318,6 +332,11 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
 		bool writable);
 
+// 로드 함수에서 file_name (cmd_line) 넘기면 스택에 밀어넣는 부분
+arg_stack(char *cmdline, struct intr_frame *if_) {
+	
+}
+
 /* Loads an ELF executable from FILE_NAME into the current thread.
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
@@ -344,6 +363,19 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;                   // 성공 여부
 	int i;
 
+	char *cmd = palloc_get_page(0);
+	if( cmd == NULL) {
+		return false;
+	}
+	strlcpy(cmd, file_name, PGSIZE);
+
+	char *save_ptr;
+	char *program_name = strtok_r(cmd, " ", &save_ptr);
+	if(program_name == NULL) {
+		palloc_free_page(cmd);
+		return false;
+	}
+
 	/* 1️⃣ 페이지 테이블 생성 및 활성화 */
 	t->pml4 = pml4_create ();               // 새 pml4(페이지 테이블) 생성
 	if (t->pml4 == NULL)
@@ -351,9 +383,9 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());   // 새 페이지 테이블 활성화
 
 	/* 2️⃣ 실행 파일 열기 */
-	file = filesys_open (file_name);        // 파일 시스템에서 실행 파일 탐색 및 오픈
+	file = filesys_open (program_name);        // 파일 시스템에서 실행 파일 탐색 및 오픈
 	if (file == NULL) {
-		printf ("load: %s: open failed\n", file_name);
+		printf ("load: %s: open failed\n", program_name);
 		goto done;
 	}
 
@@ -366,7 +398,7 @@ load (const char *file_name, struct intr_frame *if_) {
 			|| ehdr.e_version != 1
 			|| ehdr.e_phentsize != sizeof (struct Phdr)   // 프로그램 헤더 크기 확인
 			|| ehdr.e_phnum > 1024) {                     // 프로그램 헤더 개수 유효성
-		printf ("load: %s: error loading executable\n", file_name);
+		printf ("load: %s: error loading executable\n", program_name);
 		goto done;
 	}
 
@@ -434,6 +466,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* 5️⃣ 유저 스택 설정 */
 	if (!setup_stack (if_))
+
 		goto done;
 
 	/* 6️⃣ 실행 시작 주소 설정 */
@@ -441,12 +474,14 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: 인자 전달 구현 (argument passing) */
 	// - 프로젝트 2에서 argv, argc 스택에 적재하는 부분 구현 예정
+	arg_stack(file_name, if_);
 
 	success = true;
 
 done:
 	/* 성공/실패 여부와 관계없이 파일 닫기 */
 	file_close (file);
+	palloc_free_page(cmd);
 	return success;
 }
 

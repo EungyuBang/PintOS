@@ -186,10 +186,13 @@ sema_up (struct semaphore *sema)
   intr_set_level (old_level);
 
   // 현재 스레드보다 깨어난 스레드의 우선순위가 더 높으면 양보
-  if (t != NULL && cur_thread->priority < t->priority)
-  {
-    thread_yield ();
-  }
+   if (t != NULL && cur_thread->priority < t->priority) {
+		if (intr_context()) {
+			intr_yield_on_return(); // 인터럽트 컨텍스트면 리턴 시 양보
+		} else {
+			thread_yield(); // 일반 컨텍스트면 바로 양보
+		}
+   }
 }
 
 

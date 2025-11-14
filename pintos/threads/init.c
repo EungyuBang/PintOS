@@ -255,7 +255,7 @@ run_task (char **argv) {
 		run_test (task);
 	} else {
 		// 10주차 fork 시켜놓고 원래 프로그램이 죽기 전에 fork 된 프로그램이 돌아가게 원래 프로그램이 기다려야 한다
-		process_wait (process_create_initd (task));s
+		process_wait (process_create_initd (task));
 	}
 #else
 	run_test (task);
@@ -277,6 +277,7 @@ run_actions (char **argv) {
 	};
 
 	/* Table of supported actions. */
+	// 1. 사용자가 입력한 명령어 argv[0]이 run이 맞는지, 2. 인자 2개 들어온거 맞는지 (argv[0]= run, argv[1]= '실행할 프로그램 문자열' -> 이 2조건이 만족되면, run_task 실행)
 	static const struct action actions[] = {
 		{"run", 2, run_task},
 #ifdef FILESYS
