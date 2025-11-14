@@ -18,10 +18,12 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
 
+static struct semaphore temporary;
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -41,6 +43,12 @@ process_init (void) {
 // filename 은 'programname args ~' 이런식
 tid_t
 process_create_initd (const char *file_name) {
+	static bool sema_initialized = false;
+  if (!sema_initialized)
+  {
+    sema_init(&temporary, 0);
+    sema_initialized = true;
+  }
 	char *fn_copy;
 	tid_t tid;
 
@@ -53,8 +61,8 @@ process_create_initd (const char *file_name) {
 	strlcpy (fn_copy, file_name, PGSIZE);
 
 	// file_name 파싱 하는 부분 'programname args' -> 'programname' 됨
-	// char *ptr;
-	// __strtok_r(file_name, " ", &ptr);
+	char *ptr;
+	strtok_r(file_name, " ", &ptr);
 
 	/* Create a new thread to execute FILE_NAME. */
 	// 프로그램을 실행할 쓰레드를 하나 만들고 , 그 쓰레드는 바로 initd 실행 (fn_copy를 인자로 받아서 -> fn_copy에는 programname args 다 들어있음)
@@ -219,7 +227,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	while(1) {}
+	sema_down(&temporary);
 	return -1;
 }
 
@@ -231,7 +239,7 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
+	sema_up(&temporary);
 	process_cleanup ();
 }
 
@@ -333,8 +341,49 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		bool writable);
 
 // 로드 함수에서 file_name (cmd_line) 넘기면 스택에 밀어넣는 부분
-arg_stack(char *cmdline, struct intr_frame *if_) {
-	
+void
+arg_load_stack(char *cmdline, struct intr_frame *if_) {
+	char *token, *save_ptr;
+	int argc = 0;
+	char *argv[64]; // 최대 64개의 인자를 처리한다고 가정
+
+	// 1. 커맨드 라인 파싱
+	for (token = strtok_r(cmdline, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+		argv[argc++] = token;
+	}
+
+	// 2. 인자 문자열들을 스택에 역순으로 Push
+	for (int i = argc - 1; i >= 0; i--) {
+		int len = strlen(argv[i]);
+		// 인자들의 각 바이트 수만큼 스택 증가(증가니까 - , + NULL 생각!)
+		if_->rsp -= (len + 1); // 널 종결 문자 포함
+		memcpy((void *)if_->rsp, argv[i], len + 1);
+		argv[i] = (char *)if_->rsp; // 새로운 인자 들어올때마다 스택 최상단 값 증가 -> 들어올 때 마다 업데이트
+	}
+
+	// 3. 스택 포인터를 8바이트로 정렬
+	while(if_->rsp % 8 != 0) 
+		if_->rsp--; 
+
+	// 4. argv 포인터(문자열 주소)들을 스택에 Push
+	// argv[argc]에 해당하는 널 포인터 sentinel 삽입
+	if_->rsp -= 8;
+	memset((void *)if_->rsp, 0, sizeof(char *));
+
+	// 인자들의 주소를 역순으로 삽입
+	for (int i = argc - 1; i >= 0; i--) {
+		// 삽입되니 스택의 최상단 주소 8씩 감소 (8씩 증가)
+		if_->rsp -= 8;
+		memcpy((void *)if_->rsp, &argv[i], sizeof(char *));
+	}
+
+	// 5. main(argc, argv)를 위한 레지스터 설정
+	if_->R.rdi = argc;
+	if_->R.rsi = if_->rsp;
+
+	// 6. 가짜 반환 주소 Push
+	if_->rsp -= 8;
+	memset((void *)if_->rsp, 0, sizeof(void *));
 }
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
@@ -364,7 +413,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	int i;
 
 	char *cmd = palloc_get_page(0);
-	if( cmd == NULL) {
+	if(cmd == NULL) {
 		return false;
 	}
 	strlcpy(cmd, file_name, PGSIZE);
@@ -454,8 +503,7 @@ load (const char *file_name, struct intr_frame *if_) {
 					}
 
 					/* 파일에서 메모리로 세그먼트 로드 */
-					if (!load_segment (file, file_page, (void *) mem_page,
-									   read_bytes, zero_bytes, writable))
+					if (!load_segment (file, file_page, (void *) mem_page, read_bytes, zero_bytes, writable))
 						goto done;
 				} else
 					goto done;
@@ -474,7 +522,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: 인자 전달 구현 (argument passing) */
 	// - 프로젝트 2에서 argv, argc 스택에 적재하는 부분 구현 예정
-	arg_stack(file_name, if_);
+	arg_load_stack(file_name, if_);
 
 	success = true;
 
