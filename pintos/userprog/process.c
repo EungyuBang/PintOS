@@ -65,7 +65,7 @@ initd (void *f_name) {
 #endif
 
 	process_init ();
-
+	// 여기서 process_exec 실행
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -160,6 +160,7 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
+// 프로세스 익스큐트
 int
 process_exec (void *f_name) {
 	char *file_name = f_name;
@@ -321,111 +322,134 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
+// 유저가 실행을 요청한 프로그램을 하드 디스크에서 찾아서 메모리에 적쟤(load) 하는 단계
+/* Loads an ELF executable from the file system into the current process's memory.
+ * 
+ * file_name: 실행할 유저 프로그램의 파일 이름
+ * if_:       유저 프로그램이 시작될 때의 레지스터 상태를 저장하는 intr_frame
+ * 
+ * 이 함수는 다음 단계를 수행한다:
+ * 1. 새로운 페이지 테이블(pml4)을 만들고 활성화
+ * 2. 파일 시스템에서 실행 파일을 열고 ELF 헤더 검증
+ * 3. 프로그램 헤더를 읽으며 메모리에 코드/데이터 세그먼트를 적재
+ * 4. 유저 스택을 설정 (setup_stack)
+ * 5. 진입점(e_entry)을 설정하여 CPU가 해당 주소부터 실행하도록 함
+ */
 static bool
 load (const char *file_name, struct intr_frame *if_) {
-	struct thread *t = thread_current ();
-	struct ELF ehdr;
-	struct file *file = NULL;
-	off_t file_ofs;
-	bool success = false;
+	struct thread *t = thread_current ();   // 현재 스레드 (실행할 프로세스)
+	struct ELF ehdr;                        // ELF 헤더 구조체
+	struct file *file = NULL;               // 실행 파일 포인터
+	off_t file_ofs;                         // 파일 오프셋
+	bool success = false;                   // 성공 여부
 	int i;
 
-	/* Allocate and activate page directory. */
-	t->pml4 = pml4_create ();
+	/* 1️⃣ 페이지 테이블 생성 및 활성화 */
+	t->pml4 = pml4_create ();               // 새 pml4(페이지 테이블) 생성
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
+	process_activate (thread_current ());   // 새 페이지 테이블 활성화
 
-	/* Open executable file. */
-	file = filesys_open (file_name);
+	/* 2️⃣ 실행 파일 열기 */
+	file = filesys_open (file_name);        // 파일 시스템에서 실행 파일 탐색 및 오픈
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
 
-	/* Read and verify executable header. */
+	/* 3️⃣ ELF 헤더 읽고 검증 */
+	// 실행 파일이 올바른 ELF 포맷인지 확인
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
-			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
-			|| ehdr.e_type != 2
-			|| ehdr.e_machine != 0x3E // amd64
+			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)   // ELF 매직 넘버 확인
+			|| ehdr.e_type != 2                           // 실행 파일 타입
+			|| ehdr.e_machine != 0x3E                     // x86-64 아키텍처
 			|| ehdr.e_version != 1
-			|| ehdr.e_phentsize != sizeof (struct Phdr)
-			|| ehdr.e_phnum > 1024) {
+			|| ehdr.e_phentsize != sizeof (struct Phdr)   // 프로그램 헤더 크기 확인
+			|| ehdr.e_phnum > 1024) {                     // 프로그램 헤더 개수 유효성
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
 
-	/* Read program headers. */
-	file_ofs = ehdr.e_phoff;
+	/* 4️⃣ 프로그램 헤더를 순회하며 세그먼트 로드 */
+	file_ofs = ehdr.e_phoff;                 // 프로그램 헤더 오프셋부터 읽기 시작
 	for (i = 0; i < ehdr.e_phnum; i++) {
 		struct Phdr phdr;
 
+		// 파일 범위 검증
 		if (file_ofs < 0 || file_ofs > file_length (file))
 			goto done;
-		file_seek (file, file_ofs);
+		file_seek (file, file_ofs);          // 해당 프로그램 헤더 위치로 이동
 
+		// 프로그램 헤더 읽기
 		if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
 			goto done;
 		file_ofs += sizeof phdr;
+
+		// 세그먼트 타입에 따라 처리
 		switch (phdr.p_type) {
 			case PT_NULL:
 			case PT_NOTE:
 			case PT_PHDR:
 			case PT_STACK:
 			default:
-				/* Ignore this segment. */
+				/* 무시 가능한 세그먼트 */
 				break;
+
 			case PT_DYNAMIC:
 			case PT_INTERP:
 			case PT_SHLIB:
+				/* 지원하지 않는 타입 → 실패 처리 */
 				goto done;
-			case PT_LOAD:
+
+			case PT_LOAD: {
+				/* 로드 가능한 세그먼트 → 메모리에 적재 */
 				if (validate_segment (&phdr, file)) {
-					bool writable = (phdr.p_flags & PF_W) != 0;
-					uint64_t file_page = phdr.p_offset & ~PGMASK;
-					uint64_t mem_page = phdr.p_vaddr & ~PGMASK;
-					uint64_t page_offset = phdr.p_vaddr & PGMASK;
+					bool writable = (phdr.p_flags & PF_W) != 0;  // 쓰기 가능 여부
+					uint64_t file_page = phdr.p_offset & ~PGMASK; // 파일 오프셋 페이지 단위
+					uint64_t mem_page  = phdr.p_vaddr & ~PGMASK;  // 가상주소 페이지 단위
+					uint64_t page_offset = phdr.p_vaddr & PGMASK; // 페이지 내 오프셋
 					uint32_t read_bytes, zero_bytes;
+
 					if (phdr.p_filesz > 0) {
-						/* Normal segment.
-						 * Read initial part from disk and zero the rest. */
+						/* 일부는 파일에서 읽고, 나머지는 0으로 채움 (BSS 등) */
 						read_bytes = page_offset + phdr.p_filesz;
 						zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE)
-								- read_bytes);
+										- read_bytes);
 					} else {
-						/* Entirely zero.
-						 * Don't read anything from disk. */
+						/* 완전히 0으로 채워지는 세그먼트 */
 						read_bytes = 0;
 						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
 					}
+
+					/* 파일에서 메모리로 세그먼트 로드 */
 					if (!load_segment (file, file_page, (void *) mem_page,
-								read_bytes, zero_bytes, writable))
+									   read_bytes, zero_bytes, writable))
 						goto done;
-				}
-				else
+				} else
 					goto done;
 				break;
+			}
 		}
 	}
 
-	/* Set up stack. */
+	/* 5️⃣ 유저 스택 설정 */
 	if (!setup_stack (if_))
 		goto done;
 
-	/* Start address. */
-	if_->rip = ehdr.e_entry;
+	/* 6️⃣ 실행 시작 주소 설정 */
+	if_->rip = ehdr.e_entry;   // ELF 진입점 (main 함수 시작 주소)
 
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-	 // argument_passing 구현하는 곳
+	/* TODO: 인자 전달 구현 (argument passing) */
+	// - 프로젝트 2에서 argv, argc 스택에 적재하는 부분 구현 예정
 
 	success = true;
 
 done:
-	/* We arrive here whether the load is successful or not. */
+	/* 성공/실패 여부와 관계없이 파일 닫기 */
 	file_close (file);
 	return success;
 }
+
 
 
 /* Checks whether PHDR describes a valid, loadable segment in
