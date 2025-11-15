@@ -341,8 +341,11 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		bool writable);
 
 // 로드 함수에서 file_name (cmd_line) 넘기면 스택에 밀어넣는 부분
-void
+bool
 arg_load_stack(char *cmdline, struct intr_frame *if_) {
+	// 성공 실패 반환
+	bool success = false;
+
 	char *token, *save_ptr;
 	int argc = 0;
 	char *argv[64]; // 최대 64개의 인자를 처리한다고 가정
@@ -357,11 +360,11 @@ arg_load_stack(char *cmdline, struct intr_frame *if_) {
 		int len = strlen(argv[i]);
 		// 인자들의 각 바이트 수만큼 스택 증가(증가니까 - , + NULL 생각!)
 		if_->rsp -= (len + 1); // 널 종결 문자 포함
-		memcpy((void *)if_->rsp, argv[i], len + 1);
-		argv[i] = (char *)if_->rsp; // 새로운 인자 들어올때마다 스택 최상단 값 증가 -> 들어올 때 마다 업데이트
+		memcpy((void *)if_->rsp, argv[i], len + 1); // arvg[i]에 있는 데이터 스택에 넣고
+		argv[i] = (char *)if_->rsp; // 배열 해당 자리엔 그 데이터 주소 넣기 
 	}
-
 	// 3. 스택 포인터를 8바이트로 정렬
+	// 포인터 공간만 만들고 초기화 x -> 어차피 안씀 (아래에서 실제 데이터 접근할땐 주소로 뛰니까)
 	while(if_->rsp % 8 != 0) 
 		if_->rsp--; 
 
@@ -384,13 +387,17 @@ arg_load_stack(char *cmdline, struct intr_frame *if_) {
 	// 6. 가짜 반환 주소 Push
 	if_->rsp -= 8;
 	memset((void *)if_->rsp, 0, sizeof(void *));
-}
+
+	success = true;
+	return success;
+ }
+
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
-// 유저가 실행을 요청한 프로그램을 하드 디스크에서 찾아서 메모리에 적쟤(load) 하는 단계
+// 유저가 실행을 요청한 프로그램을 하드 디스크에서 찾아서 메모리에 적재(load) 하는 단계
 /* Loads an ELF executable from the file system into the current process's memory.
  * 
  * file_name: 실행할 유저 프로그램의 파일 이름
@@ -522,9 +529,9 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: 인자 전달 구현 (argument passing) */
 	// - 프로젝트 2에서 argv, argc 스택에 적재하는 부분 구현 예정
-	arg_load_stack(file_name, if_);
+	success = (file_name, if_);
 
-	success = true;
+	//success = true;
 
 done:
 	/* 성공/실패 여부와 관계없이 파일 닫기 */
