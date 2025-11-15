@@ -251,6 +251,7 @@ thread_create (const char *name, int priority,
 	struct thread *t;
 	tid_t tid;
 
+
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
@@ -261,6 +262,11 @@ thread_create (const char *name, int priority,
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
+
+	// 현재 쓰레드에서 create 돼서 자식 쓰레드가 만들어지는거니까 부모 쓰레드는 현재 쓰레드
+	struct thread *parent = thread_current();		
+	// 부모 자식 리스트에, 자식 연결
+	list_push_back(&parent->child_list, &t->child_elem);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -537,6 +543,9 @@ init_thread (struct thread *t, const char *name, int priority) {
   t->waiting_for_lock = NULL;
   list_init (&t->donations_list);
 	t->magic = THREAD_MAGIC;
+	// 10주차 자식 관리 위한 초기화
+	sema_init(&t->wait_sema, 0);
+	list_init(&t->child_list);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
