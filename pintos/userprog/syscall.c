@@ -239,7 +239,7 @@ void sys_write(struct intr_frame *f)
   int fd = f->R.rdi;                      // 1번 인자 : rdi -> fd (파일 디스크립터)
   const void *buffer = (void *)f->R.rsi;  // 2번 인자 : buffer (출력할 문자의 주소)
   unsigned size = f->R.rdx;               // 3번 인자 : size (출력할 문자의 길이)
-	check_buffer(buffer, size);									// 사용자가 넘겨준 buffer 주소를 읽어도 되는지 확인
+	check_buffer(buffer, size);							// 사용자가 넘겨준 buffer 주소를 읽어도 되는지 확인
   if (fd == 1)
   {                          
   	putbuf(buffer, size);  // 버퍼를 콘솔에 출력
