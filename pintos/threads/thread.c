@@ -267,6 +267,8 @@ thread_create (const char *name, int priority,
 	struct thread *parent = thread_current();		
 	// 부모 자식 리스트에, 자식 연결
 	list_push_back(&parent->child_list, &t->child_elem);
+	
+	
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */

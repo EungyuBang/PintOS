@@ -128,6 +128,7 @@ main (void) {
 	run_actions (argv);
 
 	/* Finish up. */
+	// 여기서 부모 쓰레드 사망
 	if (power_off_when_done)
 		power_off ();
 	thread_exit ();
@@ -261,7 +262,6 @@ run_task (char **argv) {
 #else
 	run_test (task);
 #endif
-	// 그리고 이후에 자식이 종료돼서 부모 쓰레드가 다시 실행되면 여기로 돌아옴	-> 이후 밑에 power_off -> PintOS 종료
 	printf ("Execution of '%s' complete.\n", task);
 }
 
