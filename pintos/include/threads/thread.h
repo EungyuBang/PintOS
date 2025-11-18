@@ -29,6 +29,7 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define FDT_LIMIT 128
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -92,6 +93,7 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+	
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -108,6 +110,11 @@ struct thread {
 	struct list child_list; // 부모가 가질 자식들의 리스트
 	struct list_elem child_elem; // 자식이 부모의 리스트에 연결할때 쓸 elem
 
+	//10 주차 file
+	struct file **fd_table;
+	int next_fd;
+	// 10주차 rox
+	// struct file *running_file;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
