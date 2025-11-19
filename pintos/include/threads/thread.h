@@ -29,7 +29,7 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-#define FDT_LIMIT 128
+#define FDT_LIMIT 512
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -107,14 +107,16 @@ struct thread {
 	// 10주차 부모, 자식쓰레드 wait 
 	int exit_status; // 자식이 종료될때 상태 저장
 	struct semaphore wait_sema; // 자식이 종료될 떄 부모를 꺠우기 위한 개인 세마포어 
+	struct semaphore exit_sema; // 부모가 자식에게 종료 시그널을 줄 때 사용할 세마포어
 	struct list child_list; // 부모가 가질 자식들의 리스트
 	struct list_elem child_elem; // 자식이 부모의 리스트에 연결할때 쓸 elem
-
+	bool waited;
+	struct thread *parent;
 	//10 주차 file
 	struct file **fd_table;
 	int next_fd;
 	// 10주차 rox
-	// struct file *running_file;
+	struct file *running_file;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
