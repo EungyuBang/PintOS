@@ -149,8 +149,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
         return false; 
     }
 
-    /* 3. [중요] 자식을 위한 새 페이지(PAL_USER) 할당 */
-    // 여기가 빠져있어서 newpage가 쓰레기 값이었던 것입니다!
+    /* 3. 자식을 위한 새 페이지(PAL_USER) 할당 */
     newpage = palloc_get_page (PAL_USER); 
     if (newpage == NULL) {
         return false; // 메모리 부족
@@ -228,15 +227,21 @@ __do_fork (void *aux) {
 	}
 
 	// 10주차 rox
-if (parent->running_file != NULL) {
+	// 부모가 현재 실행중인 파일이 있다면
+	if (parent->running_file != NULL) {
+		// 자식의 실행중인 파일에도 복사
     child->running_file = file_duplicate(parent->running_file);
+		// 자식의 실행중인 파일도 deny_write 상태 유지 !
     file_deny_write(child->running_file);
-}
+	}
 
+	// 유저 모드로 전환전, 포크 성공 유무 저장
 	parent_data->fork_success = true;
+	// 부모 깨우기
 	sema_up(&parent_data->fork_sema);
 
 	/* Finally, switch to the newly created process. */
+	// 자식은 유저모드로
 	if (succ)
 		do_iret (&if_);
 error:
@@ -260,6 +265,7 @@ process_exec (void *f_name) {
 	struct thread *cur = thread_current();
   if (cur->running_file != NULL) {
       lock_acquire(&filesys_lock);
+			// 다른 파일로 변경 전, 부모와 같이 참조하고 있는 파일 닫아줌
       file_close(cur->running_file);
       lock_release(&filesys_lock);
       cur->running_file = NULL;
@@ -369,7 +375,7 @@ process_exit (void) {
 	// 10주차 rox
 	 if (cur_thread->running_file != NULL) {
       lock_acquire(&filesys_lock);
-      file_allow_write(cur_thread->running_file);
+			// exit 전 열려있던 파일 닫아줌 (이때 deny_write 도 allow_write 로 변경됨)
       file_close(cur_thread->running_file);
       lock_release(&filesys_lock);
       cur_thread->running_file = NULL;
@@ -594,9 +600,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", program_name);
 		goto done;
 	}
-	// 10주차 rox
-	// t ->running_file = file;
-	// file_deny_write(file);
 
 	/* 3️⃣ ELF 헤더 읽고 검증 */
 	// 실행 파일이 올바른 ELF 포맷인지 확인
@@ -686,10 +689,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
     /* 1. 로딩 성공 시 처리 */
+		// 10주차 rox
     if (success) {
         t->running_file = file; // 스레드 구조체에 저장
         file_deny_write(file);  // 쓰기 방지 설정 (이게 핵심!)        
-        // [절대 금지] 여기서 file_close(file) 하면 안 됨!
     } 
     /* 2. 로딩 실패 시 처리 */
     else {

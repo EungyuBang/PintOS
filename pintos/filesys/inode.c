@@ -27,6 +27,7 @@ bytes_to_sectors (off_t size) {
 }
 
 /* In-memory inode. */
+// 실제 데이터. 
 struct inode {
 	struct list_elem elem;              /* Element in inode list. */
 	disk_sector_t sector;               /* Sector number of disk location. */
@@ -237,6 +238,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 	off_t bytes_written = 0;
 	uint8_t *bounce = NULL;
 
+	// write 시스템 콜이 들어오면 여기서 deny_write_cnt 수보고 하나라도 있으면 write 거부
 	if (inode->deny_write_cnt)
 		return 0;
 
