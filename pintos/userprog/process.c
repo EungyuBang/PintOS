@@ -103,17 +103,20 @@ process_fork (const char *name, struct intr_frame *if_) {
 		return TID_ERROR;
 	}
 
+	// fork_struct 에 자식에게 넘길 부모의 현재 상태 저장
 	fork_struct->parent = parent_thread;
 	memcpy(&fork_struct->parent_if, if_, sizeof(struct intr_frame));
 	sema_init(&fork_struct->fork_sema, 0);
 	fork_struct->fork_success = false;
 
+	// 이후 자식 만들고 부모 상태 저장된 구조체 넘기고 
 	tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, fork_struct);
+	// 자식의 리턴값이 TID_ERROR 면 구조체 free 후 오류 반환
 	if(tid == TID_ERROR) {
 		free(fork_struct);
 		return TID_ERROR;
 	}
-
+	// 여기서 sleep
 	sema_down(&fork_struct->fork_sema);
 
 	if(!fork_struct->fork_success) {
@@ -180,9 +183,10 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 static void
 // 인자로 부모값 가진 포크 구조체 넘어옴 
 __do_fork (void *aux) {
-
+	// 부모의 정보를 가진 fork_struct를 aux 로 받아서 parent_data 로 
 	struct fork_struct *parent_data = aux;
 	struct thread *parent = parent_data->parent;
+	// 현재 쓰레드의 주체는 자식 쓰레드
 	struct thread *child = thread_current();
 		
 	bool succ = true;
@@ -251,13 +255,10 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
-// 프로세스 익스큐트
-/* 현재 실행 중인 프로세스(커널 스레드)를 'f_name'의 
- * 새 유저 프로그램으로 교체(transform)합니다.
- * 이 함수는 실패 시 -1을 반환하며, 성공 시 리턴하지 않습니다. */
 int
 process_exec (void *f_name) {
   // f_name은 "program_name args..." 형태의 '명령어 전체' 문자열.
+	// 새로 실행할 파일의 이름임 
   char *file_name = f_name;
   bool success;
 
@@ -327,11 +328,13 @@ process_wait (tid_t child_tid UNUSED) {
 		return -1 ;
 	}
 
-	// 두번 wait 방지 -> 📌 lock 생각 !
+	// 두번 wait 방지
+	lock_acquire(&filesys_lock);
 	if(search_child->waited){
 		return -1;
 	}
 	search_child->waited = true;
+	lock_release(&filesys_lock);
 	
 	// 부모는 자식의 개인 세마포어를 기다리면서 sleep
 	sema_down(&search_child->wait_sema);
