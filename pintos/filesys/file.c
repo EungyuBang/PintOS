@@ -115,6 +115,7 @@ file_write_at (struct file *file, const void *buffer, off_t size,
 
 /* Prevents write operations on FILE's underlying inode
  * until file_allow_write() is called or FILE is closed. */
+// rox 함수 , 이 함수를 호출하면 해당 파일의 deny_write이 true 로 변하고 cnt ++
 void
 file_deny_write (struct file *file) {
 	ASSERT (file != NULL);

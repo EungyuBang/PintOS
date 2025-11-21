@@ -163,7 +163,6 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
     writable = is_writable(pte);
 
     /* 6. 자식의 페이지 테이블에 매핑 */
-    // 이제 깨끗한 newpage 주소가 들어가므로 에러가 나지 않습니다.
     if (!pml4_set_page (current->pml4, va, newpage, writable)) {
         /* 매핑 실패 시 할당받은 페이지 해제 */
         palloc_free_page (newpage);
@@ -381,7 +380,8 @@ process_exit (void) {
       cur_thread->running_file = NULL;
    } 
 	
-	// 부모가 죽기 전 자식 탐색 
+	// 부모가 죽기 전 자식 탐색 -> 부모가 먼저 죽는 경우
+	// 부팅 쓰레드는 여기를 오지 않지만, 부팅 쓰레드를 제외하고, 부모 자식의 관계가 있을 수 있어서 exit시 자식 탐색 후 다 깨워줌
 	 struct list_elem *e = list_begin(&cur_thread->child_list);
 	 while(e != list_end(&cur_thread->child_list)) {
 		struct thread *child = list_entry(e, struct thread , child_elem);
@@ -397,10 +397,10 @@ process_exit (void) {
 	 }
 
 
-	 // 자식이 죽기전 부모가 있다면
+	 // 자식이 죽기전 부모가 있다면 -> 자식이 먼저 죽는 경우
 	 if(cur_thread->parent != NULL) {
 		sema_up(&cur_thread->wait_sema); // 부모 깨우기
-		sema_down(&cur_thread->exit_sema); // 부모가 처리할 때까지 대기 -> 이후 깨어나면 밑에 process_cleanup ㅏ만나서 즉사 
+		sema_down(&cur_thread->exit_sema); // 부모가 처리할 때까지 대기 -> 이후 깨어나면 밑에 process_cleanup 만나서 즉사 
 	 }
 
 	process_cleanup ();
