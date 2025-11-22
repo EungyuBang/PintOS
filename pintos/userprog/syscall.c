@@ -41,7 +41,7 @@ void syscall_init(void)
     lock_init(&filesys_lock);
 }
 
-/*         유저 메모리 검증 함수들              */
+/* 유저 메모리 검증 함수들 -> 유저 프로그램에서 잘못된 접근을 했을 때, 사용자 프로그램만 다운시키고 OS는 유지되게 해주는 함수들 */
 /* 단일 주소가 유효한 유저 주소인지 검사 */
 void
 check_address(void *addr) {
