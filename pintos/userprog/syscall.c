@@ -15,21 +15,6 @@
 #include "filesys/filesys.h"
 #include "lib/string.h"
 
-// 구현 핸들러
-// void halt (void) NO_RETURN;
-// void exit (int status) NO_RETURN;
-// pid_t fork (const char *thread_name);
-// int exec (const char *file);
-// int wait (pid_t);
-// bool create (const char *file, unsigned initial_size);
-// bool remove (const char *file);
-// int open (const char *file);
-// int filesize (int fd);
-// int read (int fd, void *buffer, unsigned length);
-// int write (int fd, const void *buffer, unsigned length);
-// void seek (int fd, unsigned position);
-// unsigned tell (int fd);
-// void close (int fd);
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -91,7 +76,7 @@ copy_user_string(const char *ustr) {
     
     char *kstr = palloc_get_page(0);
     if (kstr == NULL) {
-        exit_with_status(-1); // 일관성 있게 exit
+        exit_with_status(-1); 
     }
     
     int i;

@@ -200,7 +200,7 @@ __do_fork (void *aux) {
 	// 포크된 자식의 리턴값은 0
 	if_.R.rax = 0;
 
-	/* 2. Duplicate PT (2. 페이지 테이블 복제) */
+	/* 2. Duplicate PT (2. pml4 복제) */
 	child->pml4 = pml4_create();
 	if (child->pml4 == NULL) {
 		succ = false;
@@ -213,14 +213,10 @@ __do_fork (void *aux) {
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
+// 부모의 pml4 를 처음부터 끝까지 훑으면서, 유효한 페이지가 나올 때마다 duplicate_pte 함수 실행
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
 		goto error;
 #endif
-	/* TODO: Your code goes here.
-	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
-	 * TODO:       in include/filesys/file.h. Note that parent should not return
-	 * TODO:       from the fork() until this function successfully duplicates
-	 * TODO:       the resources of parent.*/
 	// 3. FD 도 복제
 	for(int i = 2 ; i < FDT_LIMIT ; i++) {
 		struct file *file = parent->fd_table[i];
@@ -331,6 +327,7 @@ process_wait (tid_t child_tid UNUSED) {
 	// 두번 wait 방지
 	lock_acquire(&filesys_lock);
 	if(search_child->waited){
+		lock_release(&filesys_lock);
 		return -1;
 	}
 	search_child->waited = true;
@@ -355,10 +352,7 @@ void
 process_exit (void) {
 	// 현재 쓰레드의 주체는 자식 쓰레드
 	struct thread *cur_thread = thread_current ();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+
 	// 쓰레드 죽기 전에, 파일 디스크립터 정리
 	 if(cur_thread->fd_table != NULL) {
 		lock_acquire(&filesys_lock);
@@ -695,7 +689,7 @@ done:
 		// 10주차 rox
     if (success) {
         t->running_file = file; // 스레드 구조체에 저장
-        file_deny_write(file);  // 쓰기 방지 설정 (이게 핵심!)        
+        file_deny_write(file);  // 쓰기 방지 설정     
     } 
     /* 2. 로딩 실패 시 처리 */
     else {
