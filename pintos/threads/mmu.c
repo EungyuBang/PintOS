@@ -203,6 +203,7 @@ pml4_destroy (uint64_t *pml4) {
  * register. */
 void
 pml4_activate (uint64_t *pml4) {
+	// process_activate 할 때, pml4 주소를 cr3 레지스터에 넣어준다.
 	lcr3 (vtop (pml4 ? pml4 : base_pml4));
 }
 
