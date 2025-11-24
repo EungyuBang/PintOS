@@ -20,6 +20,7 @@
 #include "intrinsic.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
+#include "lib/string.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -255,16 +256,22 @@ int
 process_exec (void *f_name) {
   // f_name은 "program_name args..." 형태의 '명령어 전체' 문자열.
 	// 새로 실행할 파일의 이름임 
-  char *file_name = f_name;
+  // char *file_name = f_name;
+	char *file_name = palloc_get_page(PAL_ZERO);
+	if(file_name == NULL) {
+		return -1;
+	}
+	strlcpy(file_name, f_name, PGSIZE);
+	palloc_free_page(f_name);
   bool success;
 
-	struct thread *cur = thread_current();
-  if (cur->running_file != NULL) {
+	struct thread *cur_thread = thread_current();
+  if (cur_thread->running_file != NULL) {
       lock_acquire(&filesys_lock);
 			// 다른 파일로 변경 전, 부모와 같이 참조하고 있는 파일 닫아줌
-      file_close(cur->running_file);
+      file_close(cur_thread->running_file);
       lock_release(&filesys_lock);
-      cur->running_file = NULL;
+      cur_thread->running_file = NULL;
   }
   /* 1. 유저 모드 진입을 위한 '임시' CPU 레지스터(intr_frame)를 설정. */
   struct intr_frame _if;

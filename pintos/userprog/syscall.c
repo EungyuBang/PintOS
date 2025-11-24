@@ -67,8 +67,8 @@ check_buffer(void *buffer, size_t size) {
     check_address(buffer + size - 1);
 }
 
-/* 유저 문자열을 커널 공간으로 안전하게 복사 */
-// 올바른 코드
+/* 유저 문자열을 커널 공간으로 안전하게 복사 -> TOCTOU 상황 고려 */
+// 반복문 중 게속 주소를 검사하는 이유는 문자열이 두 페이지에 걸쳐서 존재할 수 있기때문.
 char *
 copy_user_string(const char *ustr) {
     // 1. 시작 주소부터 check_address로 검사
@@ -238,9 +238,11 @@ void sys_create(struct intr_frame *f)
     unsigned initial_size = (unsigned)f->R.rsi;
     
     check_address(file);
-    
+
     // filesys_create 호출 
+    lock_acquire(&filesys_lock);
     f->R.rax = filesys_create(file, initial_size);
+    lock_release(&filesys_lock);
 }
 
 void sys_remove(struct intr_frame *f) 
@@ -248,7 +250,9 @@ void sys_remove(struct intr_frame *f)
     const char *file = (const char *)f->R.rdi;
     check_address(file);
     
+    lock_acquire(&filesys_lock);
     f->R.rax = filesys_remove(file);
+    lock_release(&filesys_lock);
 }
 
 void sys_open(struct intr_frame *f) 
@@ -320,10 +324,10 @@ void sys_read(struct intr_frame *f)
   void *buffer = (void *)f->R.rsi;
   unsigned size = f->R.rdx;
 
-  if(size == 0) {
-    f->R.rax = 0;
-    return;
-  }
+  // if(size == 0) {
+  //   f->R.rax = 0;
+  //   return;
+  // }
 
   check_buffer(buffer, size);
   // fd=0 -> 표준입력 : 키보드 입력
@@ -368,10 +372,10 @@ void sys_write(struct intr_frame *f)
   const void *buffer = (void *)f->R.rsi;  // 2번 인자 : buffer (출력할 문자의 주소)
   unsigned size = f->R.rdx;               // 3번 인자 : size (출력할 문자의 길이)
 
-  if(size == 0) {
-    f->R.rax = 0;
-    return;
-  }
+  // if(size == 0) {
+  //   f->R.rax = 0;
+  //   return;
+  // }
 
 	check_buffer(buffer, size);							// 사용자가 넘겨준 buffer 주소를 읽어도 되는지 확인
 
@@ -388,8 +392,6 @@ void sys_write(struct intr_frame *f)
     f->R.rax = -1;
     return;
   }
-
-
 
   if (fd == 1)
   {                          
