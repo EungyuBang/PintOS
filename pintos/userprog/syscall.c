@@ -45,7 +45,7 @@ void syscall_init(void)
 /* 단일 주소가 유효한 유저 주소인지 검사 */
 void
 check_address(void *addr) {
-    struct thread *cur = thread_current();
+    struct thread *cur_thread = thread_current();
 
     // 1. NULL이거나, 2. 커널 영역 주소일 때
     if (addr == NULL || !is_user_vaddr(addr)) {
@@ -53,7 +53,7 @@ check_address(void *addr) {
     }
 
     // 매핑되지 않은 주소일 때 (pml4_get_page가 NULL 반환)
-    if (pml4_get_page(cur->pml4, addr) == NULL) {
+    if (pml4_get_page(cur_thread->pml4, addr) == NULL) {
         exit_with_status(-1);
     }
 }
@@ -222,13 +222,13 @@ sys_exec(struct intr_frame *f)
 
 void sys_wait (struct intr_frame *f) 
 {
-  // 1. 첫 번째 인자(rdi)에서 기다릴 'child_tid'를 읽어옵니다.
+  // 1. 첫 번째 인자(rdi)에서 기다릴 'child_tid'를 읽어옴.
   tid_t child_tid = (tid_t)f->R.rdi;
   
-  // 2. 이전에 구현한 '진짜' wait 함수를 호출합니다.
+  // 2. wait 함수를 호출.
   int status = process_wait(child_tid); 
   
-  // 3. 자식의 종료 코드(status)를 반환값 레지스터(rax)에 저장합니다.
+  // 3. 자식의 종료 코드(status)를 반환값 레지스터(rax)에 저장.
   f->R.rax = status;
 }
 
@@ -239,7 +239,7 @@ void sys_create(struct intr_frame *f)
     
     check_address(file);
     
-    // filesys_create 호출 (filesys/filesys.c에 이미 구현됨)
+    // filesys_create 호출 
     f->R.rax = filesys_create(file, initial_size);
 }
 
@@ -276,6 +276,7 @@ void sys_open(struct intr_frame *f)
   }
 
   int fd = -1;
+  // 각 프로세스의 fd 테이블 순회하면서 NULL 이면 해당 fd 배정
   for(int i = 2 ; i < FDT_LIMIT ; i++) {
     if(cur_thread->fd_table[i] == NULL) {
       fd = i;
@@ -283,7 +284,7 @@ void sys_open(struct intr_frame *f)
       break;
     }
   }
-
+  // 반목문을 다 돌았는데도 -1? -> 테이블이 꽉 차서 배정받지 못한 경우 -> 파일 닫아줘야 함
   if(fd == -1) {
     lock_acquire(&filesys_lock);
     file_close(file);
@@ -325,15 +326,19 @@ void sys_read(struct intr_frame *f)
   }
 
   check_buffer(buffer, size);
+  // fd=0 -> 표준입력 : 키보드 입력
   if(fd == 0)
   {
+    // 사이즈 만큼 반복
     for(unsigned i = 0; i < size; i++) {
+      // 키보드 입력 한 글자 가져와서 버퍼에 담기
       ((uint8_t *)buffer)[i] = input_getc();
    }
+   // read 함수의 리턴값은 실제로 읽은 바이트 수여야 하므로 size 반환
    f->R.rax = size;
    return;
   }
-
+  // fd=1 -> 표준 출력 -> 여기는 read 시스템 콜
   if(fd == 1) 
   {
     f->R.rax = -1;
