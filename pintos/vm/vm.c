@@ -40,6 +40,7 @@ static struct frame *vm_evict_frame (void);
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
+// 11주차 여기서 SPT에 aux - 메타데이터 등록하는 로직 들어간다
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
@@ -129,6 +130,7 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
+// 여기서 유효성 검사 + SPT 탐색 + 처리 해줘야 함 (rsp 부근이면 스택 확장까지) -> 이게 다 아니다 -> segmentation fault
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
@@ -158,6 +160,7 @@ vm_claim_page (void *va UNUSED) {
 }
 
 /* Claim the PAGE and set up the mmu. */
+// 11주차 여기서 물리 프레임 연결하고 할당? -> 그럼 여기서 lazy_load + swap 해결?
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();

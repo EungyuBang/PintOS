@@ -778,6 +778,8 @@ static bool install_page (void *upage, void *kpage, bool writable);
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
+
+// 11주차 1 load 함수 내부에서 load_segment 함수 호출해서 여기로 온다 -> vm_alloc_page_with_initializer 호출해서 spt에 메타데이터 담는다
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {

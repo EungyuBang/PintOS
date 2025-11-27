@@ -40,6 +40,7 @@ struct thread;
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
+ // 11주차 가상 메모리 page
 struct page {
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
@@ -60,6 +61,7 @@ struct page {
 };
 
 /* The representation of "frame" */
+// 11주차 물리 메모리 frame
 struct frame {
 	void *kva;
 	struct page *page;
