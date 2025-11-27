@@ -112,7 +112,7 @@ struct thread {
 	struct list_elem child_elem; // 자식이 부모의 리스트에 연결할때 쓸 elem
 	bool waited;
 	struct thread *parent;
-	//10 주차 file
+	// 10주차 file
 	struct file **fd_table;
 	int next_fd;
 	// 10주차 rox

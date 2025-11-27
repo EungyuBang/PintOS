@@ -266,6 +266,7 @@ process_exec (void *f_name) {
   bool success;
 
 	struct thread *cur_thread = thread_current();
+	
   if (cur_thread->running_file != NULL) {
       lock_acquire(&filesys_lock);
 			// 다른 파일로 변경 전, 부모와 같이 참조하고 있는 파일 닫아줌
