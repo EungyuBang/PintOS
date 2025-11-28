@@ -51,8 +51,11 @@ struct page {
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
+		// 초기화 정보가 필요할 때 사용
 		struct uninit_page uninit;
+		// 스왑 정보가 필요할 때 사용
 		struct anon_page anon;
+		// 파일 정보가 필요할 때 사용
 		struct file_page file;
 #ifdef EFILESYS
 		struct page_cache page_cache;

@@ -133,7 +133,8 @@ page_fault (struct intr_frame *f) {
 	   data.  It is not necessarily the address of the instruction
 	   that caused the fault (that's f->rip). */
 	
-	// 11주차 하드웨어가 페이지 폴트 당시 실패한 va를 임시로 저장하는 레지스터
+	// 11주차 하드웨어가 페이지 폴트 당시 실패한 va를 임시로 저장하는 레지스터 -> rcr2
+	// 그래서 fault_addr = rcr2 인거임
 	fault_addr = (void *) rcr2();
 
 	/* Turn interrupts back on (they were only off so that we could
