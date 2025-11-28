@@ -43,6 +43,7 @@ uninit_new (struct page *page, void *va, vm_initializer *init,
 }
 
 /* Initalize the page on first fault */
+// 11주차 VM_UNINIT 페이지의 첫 페이지 폴트 시 실행된다. , initialize 를 호출하여 실제 페이지를 로드
 static bool
 uninit_initialize (struct page *page, void *kva) {
 	struct uninit_page *uninit = &page->uninit;

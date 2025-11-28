@@ -18,6 +18,7 @@ static const struct page_operations anon_ops = {
 };
 
 /* Initialize the data for anonymous pages */
+// 11주차 익명 페이지용 초기화 함수
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */

@@ -130,7 +130,7 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
-// 여기서 유효성 검사 + SPT 탐색 + 처리 해줘야 함 (rsp 부근이면 스택 확장까지) -> 이게 다 아니다 -> segmentation fault
+// 여기서 유효성 검사 + SPT 탐색 + 처리 해줘야 함 (rsp 부근이면 스택 확장까지) -> 이 조건에 다 안 걸린다 -> segmentation fault
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
