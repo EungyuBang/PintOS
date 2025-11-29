@@ -27,7 +27,9 @@ hash_init (struct hash *h,
 	h->elem_cnt = 0;
 	h->bucket_cnt = 4;
 	h->buckets = malloc (sizeof *h->buckets * h->bucket_cnt);
+	// hash_hash_func hash 에 va_to_hash 함수 담김
 	h->hash = hash;
+	// hash_less_func에 comp_va 담김
 	h->less = less;
 	h->aux = aux;
 
