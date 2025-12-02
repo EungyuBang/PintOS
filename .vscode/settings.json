@@ -5,6 +5,8 @@
     "*.inc": "c",
     "pintos": "c",
     "interrupt.h": "c",
-    "init.h": "c"
+    "init.h": "c",
+    "vaddr.h": "c",
+    "vm.h": "c"
   }
 }

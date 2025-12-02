@@ -3,7 +3,7 @@
     {
       "name": "Pintos",
       "includePath": ["${workspaceFolder}/**"],
-      "defines": ["USERPROG", "FILESYS"],
+      "defines": ["USERPROG", "FILESYS", "VM"],
       "compilerPath": "/usr/bin/gcc",
       "cStandard": "gnu11",
       "cppStandard": "gnu++17",
