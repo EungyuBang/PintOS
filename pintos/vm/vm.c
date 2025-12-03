@@ -7,6 +7,8 @@
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
 #include "userprog/process.h"
+#include "include/lib/string.h"
+#include "filesys/file.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -57,6 +59,12 @@ bool comp_va (const struct hash_elem *a_, const struct hash_elem *b_, void *aux)
 	return a->va < b->va;
 }
 
+static void spt_destroy(struct hash_elem *e, void *aux) 
+{
+	struct page *page = hash_entry(e, struct page, hash_elem);
+	destroy(page);
+	free(page);
+}
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -185,6 +193,9 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	void *stack_bottm = pg_round_down(addr);
+
+	vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottm, true);
 }
 
 /* Handle the fault on write_protected page */
@@ -208,8 +219,20 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user U
 	/* TODO: Your code goes here */
 	page = spt_find_page(spt, addr);
 
+	// stack_growth -> addr 가
+	// 스택 확장 조건 : 1. USER_STACK 아래 2. rsp - 8 까진 허용 3. 스택 최대크기 -> 1MB 이하
 	if(page == NULL) {
-		// todo : stack growth
+		void *rsp = user ? f->rsp : thread_current()->rsp;
+
+		const uint64_t STACK_LIMIT = USER_STACK - (1 << 20);
+
+		if(addr >= (void *)STACK_LIMIT && (void *)addr <= USER_STACK && addr >= ((void *)(rsp - 8))) {
+			vm_stack_growth(addr);
+			page = spt_find_page(spt, addr);
+		}
+	}
+
+	if(page == NULL) {
 		return false;
 	}
 
@@ -254,8 +277,8 @@ vm_do_claim_page (struct page *page) {
 	// 페이지 테이블에 VA -> PA 매핑 등록
 	struct thread *cur_thread = thread_current();
 	if(!pml4_set_page(cur_thread->pml4, page->va, frame->kva, page->writable)) {
-		free(frame);
 		palloc_free_page(frame->kva);
+		free(frame);
 		return false;
 	}
 
@@ -279,7 +302,7 @@ bool
 supplemental_page_table_copy (struct supplemental_page_table *dst, struct supplemental_page_table *src) 
 {
 	struct hash_iterator i; 
-	// 부모 해시 테이블의 첫 번쨰 요소부터 탐색 시작 
+	// 부모 해시 테이블의 첫 번째 요소부터 탐색 시작 
 	hash_first(&i, &src->pages);
 
 	while(hash_next(&i)) {
@@ -289,7 +312,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst, struct supple
 		void *upage = src_page->va;
 		bool writable = src_page->writable;
 
-		if(type = VM_UNINIT) {
+		if(type == VM_UNINIT) {
 			vm_initializer *init = src_page->uninit.init; // lazy_load_segment 함수 
 			void *aux = src_page->uninit.aux; // lazy_load_info 구조체
 
@@ -297,22 +320,41 @@ supplemental_page_table_copy (struct supplemental_page_table *dst, struct supple
 			if(new_aux == NULL) {
 				return false;
 			} 
+			// 부모 aux 자식에게 그대로 복사하고
 			memcpy(new_aux, aux, sizeof(struct lazy_load_info));
 
-			if(!vm_alloc_page_with_initializer(VM_UNINIT, upage, writable, init, new_aux)) {
+			// 자식이 실제 실행될 때 실행될 정보 spt에 담아놓기
+			if(!vm_alloc_page_with_initializer(src_page->uninit.type, upage, writable, init, new_aux)) {
 				free(new_aux);
 				return false;
 			}
 		}
 		else {
+			// 부모랑 똑같은 type, upage, writable 상태로 spt에 페이지 만들고
+			if(!vm_alloc_page(type, upage, writable)) {
+				return false;
+			}
+			
+			// 새로운 물리 메모리 할당
+			if(!vm_claim_page(upage)) {
+				return false;
+			}
 
+			// 자식 페이지 주소 spt에서 찾아주고
+			struct page *dst_page = spt_find_page(dst, upage);
+
+			// 복사 
+			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
 		}
 	}
+	return true;
 }
+
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
     /* TODO: Destroy all the supplemental_page_table hold by thread and
      * TODO: writeback all the modified contents to the storage. */
+		hash_destroy(&spt->pages, spt_destroy);
 }
