@@ -93,10 +93,11 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable, v
 				page_initializer = file_backed_initializer;
 				break;
 			default :
+				free(p);				
 				goto err;
 		}
 
-		// 페이지 타입을 VM_UNINIT 으로 설정 + init(lazy_load_segment) 함수 등록
+		// 페이지 타입을 VM_UNINIT 으로 설정 + init(lazy_load_segment) 함수 등록 + 타입에 따른 page_initializer 등록
 		uninit_new(p, upage, init, type, aux, page_initializer);
 
 		p->writable = writable;
@@ -115,7 +116,8 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 // spt 순회하면서 가상주소 찾기
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) 
+{
 	struct page page;
 	/* TODO: Fill this function. */
 	page.va = pg_round_down(va);
@@ -128,8 +130,8 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 /* Insert PAGE into spt with validation. */
 // 새로 만들어진 페이지 spt에 넣기
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *page UNUSED) 
+{
 	// int succ = false;
 	/* TODO: Fill this function. */
 
@@ -138,8 +140,10 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	// mmap 
+	hash_delete(&spt->pages, &page->hash_elem);
 	vm_dealloc_page (page);
-	return true;
+	// return true;
 }
 
 /* Get the struct frame, that will be evicted. */
