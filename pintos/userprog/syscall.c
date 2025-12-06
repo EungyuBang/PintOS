@@ -509,6 +509,11 @@ void sys_mmap(struct intr_frame *f)
 
   struct file *file = cur_thread->fd_table[fd];
 
+  if(file_length(file) == 0) {
+    f->R.rax = NULL;
+    return;
+  }
+
   lock_acquire(&filesys_lock);
   void *ret_addr = do_mmap(addr, length, writable, file, offset);
   lock_release(&filesys_lock);

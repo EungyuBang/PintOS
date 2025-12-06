@@ -111,60 +111,68 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 
 void
 do_munmap(void *addr) {
-    struct supplemental_page_table *spt = &thread_current()->spt;
+    struct thread *t = thread_current();
+    struct supplemental_page_table *spt = &t->spt;
+
     struct page *page = spt_find_page(spt, addr);
-
-    if (page == NULL) 
-        return;
-    
-    if (page_get_type(page) != VM_FILE) 
+    if (page == NULL)
         return;
 
-    /* 1. 기준 파일 포인터 추출 */
+    enum vm_type type = page_get_type(page);
+
+    /* 1. 타입 판별 (개선된 버전) */
+    if (type == VM_UNINIT) {
+        if (page->uninit.type != VM_FILE)
+            return;
+    } 
+    else if (type != VM_FILE) {
+        return;
+    }
+
+    /* 2. 기준 파일 추출 */
     struct file *target_file = NULL;
-    
-    if (page->operations->type == VM_UNINIT) {
-        struct lazy_load_info *info = (struct lazy_load_info *)page->uninit.aux;
-        if (info) 
+
+		// munmap 대상 파일 선정
+    if (type == VM_UNINIT) {
+			// 타입이 VM_UNINIT : 아직 메모리에 올라오지 않고 구조체에 있음
+        struct lazy_load_info *info = page->uninit.aux;
+        if (info != NULL)
             target_file = info->file;
-    } else {
+    } 
+		// 타입이 VM_FILE : 메모리에 올라와서 실행중인 거임 -> lazy_load_segment 시 file_page 구조체에 담아놓은 데이터 가져오기
+    else {
         target_file = page->file.file;
     }
 
-    if (target_file == NULL) 
+    if (target_file == NULL)
         return;
 
-    /* 2. 같은 파일의 모든 페이지 순회 */
+    /* 3. 같은 파일을 가진 연속 페이지 전부 제거 */
     while (page != NULL) {
-        /* 2-1. 타입 확인 */
-        if (page_get_type(page) != VM_FILE)
-            break;
 
-        /* 2-2. 현재 페이지의 파일 확인 */
-        struct file *curr_file = NULL;
-        
-        if (page->operations->type == VM_UNINIT) {
-            struct lazy_load_info *info = (struct lazy_load_info *)page->uninit.aux;
-            if (info) 
-                curr_file = info->file;
-        } else {
-            curr_file = page->file.file;
-        }
+      enum vm_type page_type = page_get_type(page);
+      if (page_type == VM_UNINIT) {
+        if (page->uninit.type != VM_FILE)
+          break;
 
-        /* 2-3. 다른 파일이면 중단 */
-        if (curr_file != target_file)
-            break;
+        struct lazy_load_info *info = page->uninit.aux;
+        if (info == NULL || info->file != target_file)
+          break;
+      } 
+      else if (page_type == VM_FILE) {
+        if (page->file.file != target_file)
+          break;
+      } 
+      else {
+        break;
+      }
 
-        /* 2-4. 다음 주소 미리 계산 */
-        void *next_addr = (uint8_t *)page->va + PGSIZE;
+			void *next_addr = (uint8_t *)page->va + PGSIZE;
+        /* 페이지 제거 */
+      spt_remove_page(spt, page);
 
-        /* 2-5. 페이지 제거 */
-        spt_remove_page(spt, page);
-
-        /* 2-6. 다음 페이지 검색 */
-        page = spt_find_page(spt, next_addr);
-    }
-
-    /* 3. 마지막에 파일 닫기 */
-    file_close(target_file);
+    	page = spt_find_page(spt, next_addr);
+  }
+    /* 4. 마지막에 파일 닫기 */
+  file_close(target_file);
 }
