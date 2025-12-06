@@ -120,7 +120,7 @@ do_munmap(void *addr) {
 
     enum vm_type type = page_get_type(page);
 
-    /* 1. 타입 판별 (개선된 버전) */
+    /* 1. 타입 판별 */
     if (type == VM_UNINIT) {
         if (page->uninit.type != VM_FILE)
             return;
