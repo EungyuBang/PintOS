@@ -10,6 +10,10 @@
 #include "include/lib/string.h"
 #include "filesys/file.h"
 
+struct list_frame frame_table;
+struct list_elem *clock_elem;
+struct lock frame_lock;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -22,6 +26,10 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	// swap 초기화
+	list_init(&frame_table);
+	clock_elem = NULL;
+	lock_init(&frame_lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -177,8 +185,10 @@ vm_get_frame (void) {
 
 	if(kva == NULL) {
 		// 할당 받을 메모리가 부족한거임
-		// todo : victim 정해서 swap 실행
-		PANIC("todo : swap out");
+		// victim 정해서 swap 실행
+		frame = vm_evict_frame();
+		frame->page = NULL;
+		return frame;
 	}
 
 	frame = (struct frame *)malloc(sizeof(struct frame));
@@ -232,6 +242,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED, bool user U
 
 		if(addr >= (void *)STACK_LIMIT && (void *)addr <= USER_STACK && addr >= ((void *)(rsp - 8))) {
 			vm_stack_growth(addr);
+			// 확장 후 페이지 다시 찾기
 			page = spt_find_page(spt, addr);
 		}
 	}
