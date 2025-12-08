@@ -61,29 +61,34 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the swap disk. */
 static bool
 anon_swap_in (struct page *page, void *kva) {
-	struct anon_page *anon_page = &page->anon;
+  struct anon_page *anon_page = &page->anon;
+  int slot_idx = anon_page->swap_slot_index;
 
-	int slot_idx = anon_page->swap_slot_index;
+  // 아직 스왑 아웃된 적 없는 새 페이지(Stack 등)인 경우
+  if (slot_idx == -1) {
+      memset(kva, 0, PGSIZE); // 메모리를 0으로 초기화
+      return true;            // 성공 리턴
+  }
 
-	// 인덱스가 없거나, 비트맵이 비어있으면 에러
-	if(slot_idx == -1 || bitmap_test(swap_table, slot_idx) == false) {
-		return false;
-	}
+  // 인덱스가 있는데 비트맵이 비어있으면 에러 (유효성 검사)
+  if(bitmap_test(swap_table, slot_idx) == false) {
+    return false;
+  }
 
-	// disk -> memory 로 데이터 옮기기
-	for(int i = 0 ; i < SECTORS_PER_PAGE; i++) {
-		disk_read(swap_disk, slot_idx * SECTORS_PER_PAGE + i, kva + (DISK_SECTOR_SIZE * i));
-	}
-	// 스왑 슬롯 비워주기 -> 데이터를 메모리로 올렸으니까 스왑 디스크 공간은 비워주기
-	lock_acquire(&swap_lock);
-	bitmap_set(swap_table, slot_idx, false);
-	lock_release(&swap_lock);
+  // disk -> memory 로 데이터 옮기기
+  for(int i = 0 ; i < SECTORS_PER_PAGE; i++) {
+    disk_read(swap_disk, slot_idx * SECTORS_PER_PAGE + i, kva + (DISK_SECTOR_SIZE * i));
+  }
+  
+  // 스왑 슬롯 비우기
+  lock_acquire(&swap_lock);
+  bitmap_set(swap_table, slot_idx, false);
+  lock_release(&swap_lock);
 
-	anon_page->swap_slot_index = -1;
-	
-	return true;
+  anon_page->swap_slot_index = -1;
+  
+  return true;
 }
-
 /* Swap out the page by writing contents to the swap disk. */
 static bool
 anon_swap_out (struct page *page) {
@@ -97,14 +102,12 @@ anon_swap_out (struct page *page) {
 	if(slot_idx == BITMAP_ERROR) {
 		return false;
 	}
-	// memory -> disk 로 데이터 옮기기
+	// memory -> swap_disk 로 데이터 옮기기
 	for(int i = 0; i < SECTORS_PER_PAGE; i++) {
 		disk_write(swap_disk, slot_idx * SECTORS_PER_PAGE + i, page->frame->kva + (DISK_SECTOR_SIZE * i));
 	}
 
 	anon_page->swap_slot_index = (int)slot_idx;
-
-	// page->frame = NULL;
 
 	return true;
 }

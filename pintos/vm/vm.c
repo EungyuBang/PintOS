@@ -177,6 +177,7 @@ vm_get_victim (void) {
 			// access bit 확인헀는데 0 (최근에 사용 안 됐다는 거임) -> 너 victim
 			victim = candidate;
 		}
+
 		victim_select = list_next(victim_select);
 		if(victim_select == list_end(&frame_table)) {
 			victim_select = list_begin(&frame_table);
@@ -184,7 +185,6 @@ vm_get_victim (void) {
 
 		// victim 찾았으면 loop 종료
 		if(victim != NULL) {
-			// list_remove(&victim->frame_elem);
 			break;
 		}
 	}
@@ -235,6 +235,8 @@ vm_get_frame (void) {
 
 		frame->page = NULL;
 		frame->frame_owner = thread_current();	
+
+		memset(frame->kva, 0, PGSIZE);
 		return frame;
 	}
 
