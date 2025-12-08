@@ -73,6 +73,9 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	// swap
+	struct list_elem frame_elem;
+	struct thread *frame_owner;
 };
 
 /* The function table for page operations.

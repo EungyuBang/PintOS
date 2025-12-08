@@ -10,10 +10,10 @@
 #include "include/lib/string.h"
 #include "filesys/file.h"
 
-struct list_frame frame_table;
-struct list_elem *clock_elem;
+struct list frame_table;
+struct list_elem *victim_select;
 struct lock frame_lock;
-
+extern struct lock filesys_lock;
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -28,7 +28,7 @@ vm_init (void) {
 	/* TODO: Your code goes here. */
 	// swap 초기화
 	list_init(&frame_table);
-	clock_elem = NULL;
+	victim_select = NULL;
 	lock_init(&frame_lock);
 }
 
@@ -155,22 +155,64 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 }
 
 /* Get the struct frame, that will be evicted. */
+// victim 선정 로직 들어가야함
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
-	 /* TODO: The policy for eviction is up to you. */
+	ASSERT(!list_empty(&frame_table));
 
+	lock_acquire(&frame_lock);
+
+	if(victim_select == NULL || victim_select == list_end(&frame_table)) {
+		victim_select = list_begin(&frame_table);
+	}
+	while(true) {
+		struct frame *candidate = list_entry(victim_select, struct frame, frame_elem);
+
+		// access bit 확인했는데 1 (최근에 사용 됐다는 거임) -> 조건문 실행 
+		if(pml4_is_accessed(candidate->frame_owner->pml4, candidate->page->va)) {
+			// access bit 0으로 바꿔주기 
+			pml4_set_accessed(candidate->frame_owner->pml4, candidate->page->va, false);
+		} else {
+			// access bit 확인헀는데 0 (최근에 사용 안 됐다는 거임) -> 너 victim
+			victim = candidate;
+		}
+		victim_select = list_next(victim_select);
+		if(victim_select == list_end(&frame_table)) {
+			victim_select = list_begin(&frame_table);
+		}
+
+		// victim 찾았으면 loop 종료
+		if(victim != NULL) {
+			// list_remove(&victim->frame_elem);
+			break;
+		}
+	}
+	lock_release(&frame_lock);
 	return victim;
 }
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
+// 
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
-	/* TODO: swap out the victim and return the evicted frame. */
+	struct frame *victim = vm_get_victim ();
+	if(victim == NULL) {
+		return NULL;
+	}
+	struct page *page = victim->page;
+	
+	if(!swap_out(page)) {
+		return NULL;
+	}
 
-	return NULL;
+	pml4_clear_page(victim->frame_owner->pml4, victim->page->va);
+
+	victim->page = NULL;
+	page->frame = NULL;
+
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -182,22 +224,35 @@ vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
 	void *kva = palloc_get_page(PAL_USER);
-
+	
+	// 할당 받을 메모리가 부족시 NULL 반환 -> 이미 frame_table에 등록된 프레임 재할당 받는거니까 넣어줄 필요 없음
 	if(kva == NULL) {
-		// 할당 받을 메모리가 부족한거임
 		// victim 정해서 swap 실행
 		frame = vm_evict_frame();
+		if(frame == NULL) {
+			return NULL;
+		}
+
 		frame->page = NULL;
+		frame->frame_owner = thread_current();	
 		return frame;
 	}
 
+	// 할당 공간 있어서 바로 할당
 	frame = (struct frame *)malloc(sizeof(struct frame));
+
 	if(frame == NULL) {
 		palloc_free_page(kva);
 		PANIC("frame allocation failed");
 	}
+
 	frame->kva = kva;
 	frame->page = NULL;
+	frame->frame_owner = thread_current();
+	lock_acquire(&frame_lock);
+	// 새로운 프레임 할당 받는거니까 frame_table 에 넣어주기
+	list_push_back(&frame_table, &frame->frame_elem);
+	lock_release(&frame_lock);
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);

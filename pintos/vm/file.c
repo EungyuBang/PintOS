@@ -5,6 +5,7 @@
 #include "threads/malloc.h"
 #include "userprog/process.h"
 #include "threads/mmu.h"
+#include "lib/string.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
@@ -37,38 +38,113 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
+	if(file_page->file == NULL) return false;
+
+	lock_acquire(&filesys_lock);
+	if(file_read_at(file_page->file, kva, file_page->read_bytes, file_page->ofs) != (int)file_page->read_bytes) {
+		lock_release(&filesys_lock);
+		return false;
+	}
+
+	memset(kva + file_page->read_bytes, 0, file_page->zero_bytes);
+	lock_release(&filesys_lock);
+
+	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
+// static bool
+// file_backed_swap_out (struct page *page) {
+// 	struct file_page *file_page = &page->file;
+// 	struct frame *frame = page->frame;
+// 	struct thread *owner = frame->frame_owner;
+
+// 	if(pml4_is_dirty(owner->pml4, page->va)) {
+// 		lock_acquire(&filesys_lock);
+// 		file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
+// 		lock_release(&filesys_lock);
+
+// 		pml4_set_dirty(owner->pml4, page->va, 0);
+// 	}
+// 	// pml4_clear_page(owner->pml4, page->va);
+// 	// page->frame = NULL;
+// 	return true;
+// }
 static bool
 file_backed_swap_out (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
+  struct frame *frame = page->frame;
+  struct thread *owner = frame->frame_owner;
+
+  if (pml4_is_dirty(owner->pml4, page->va)) {
+    // [수정] 락 보유 여부 확인
+    bool lock_held = lock_held_by_current_thread(&filesys_lock);
+    if (!lock_held) lock_acquire(&filesys_lock);      
+    file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);       
+    if (!lock_held) lock_release(&filesys_lock);
+    pml4_set_dirty(owner->pml4, page->va, 0);
+    }
+    
+    // (이후 로직은 vm_evict_frame에서 처리하므로 삭제하거나 유지)
+    return true;
 }
+
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
+// static void
+// file_backed_destroy (struct page *page) {
+// 	struct file_page *file_page = &page->file;
+
+
+// 	if(file_page->file == NULL) return;
+
+// 	if(pml4_get_page(thread_current()->pml4, page->va) != NULL) {
+// 		if(pml4_is_dirty(thread_current()->pml4, page->va)) {
+// 			void *kva = page->frame->kva;
+// 			lock_acquire(&filesys_lock);
+// 			file_write_at(file_page->file, kva, file_page->read_bytes, file_page->ofs);
+// 			pml4_set_dirty(thread_current()->pml4, page->va, 0);
+// 			lock_release(&filesys_lock);
+// 		}
+// 		pml4_clear_page(thread_current()->pml4, page->va);
+// }
+
+// 	if(page->frame != NULL) {
+// 		page->frame->page = NULL;
+// 		page->frame = NULL;
+// 	}
+// }
+
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page = &page->file;
+  struct file_page *file_page = &page->file;
 
+	if (file_page->file == NULL) return;
 
-	if(file_page->file == NULL) return;
+  if (pml4_get_page(thread_current()->pml4, page->va) != NULL) {
+    if (pml4_is_dirty(thread_current()->pml4, page->va)) {
+      // [수정] 락 보유 여부 확인
+      bool lock_held = lock_held_by_current_thread(&filesys_lock);
+            
+      // 락이 없을 때만 잡음
+      if (!lock_held) lock_acquire(&filesys_lock);
+            
+      file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
+            
+      // 아까 내가 잡았을 때만 풀어줌 (원래 잡혀있던 거면 건드리지 않음)
+      if (!lock_held) lock_release(&filesys_lock);
+            
+      pml4_set_dirty(thread_current()->pml4, page->va, 0);
+    }
+    pml4_clear_page(thread_current()->pml4, page->va);
+  }
 
-	if(pml4_get_page(thread_current()->pml4, page->va) != NULL) {
-		if(pml4_is_dirty(thread_current()->pml4, page->va)) {
-			void *kva = page->frame->kva;
-			file_write_at(file_page->file, kva, file_page->read_bytes, file_page->ofs);
-			pml4_set_dirty(thread_current()->pml4, page->va, 0);
-		}
-		pml4_clear_page(thread_current()->pml4, page->va);
+  if (page->frame != NULL) {
+    page->frame->page = NULL;
+    page->frame = NULL;
+  }
 }
-
-	if(page->frame != NULL) {
-		page->frame->page = NULL;
-		page->frame = NULL;
-	}
-}
-
 
 void *
 do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) 
@@ -79,7 +155,14 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 	void *start_addr = addr;
 
 	size_t file_len = file_length(file);
-	if(file_len < length) length = file_len;
+
+	if(file_len <= offset || length == 0) return NULL;
+
+	if (file_len < length + offset) {
+		length = file_len - offset;
+	}
+
+	// if(file_len < length) length = file_len;
 
 	size_t read_bytes = length;
 	size_t zero_bytes = pg_round_up(length) - read_bytes;
@@ -108,6 +191,54 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 	return start_addr;
 }
 
+// void *
+// do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) 
+// {
+//   struct file *mmap_file = file_reopen(file);
+//   if(mmap_file == NULL) return NULL;
+//   void *start_addr = addr;
+//   size_t file_len = file_length(file);
+//   // [수정] 파일 길이 체크 및 length 조정 로직 (잘 하셨습니다)
+//   if(file_len <= offset || length == 0) return NULL;
+//   if (file_len < length + offset) {
+//     length = file_len - offset;
+//   }
+//   size_t read_bytes = length;
+//   size_t zero_bytes = pg_round_up(length) - read_bytes;
+//   while (read_bytes > 0 || zero_bytes > 0) {
+//     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+//     size_t page_zero_bytes = PGSIZE - page_read_bytes;   
+//     struct lazy_load_info *aux = malloc(sizeof(struct lazy_load_info));
+//     if(aux == NULL) {
+//       goto error; // [수정] 실패 시 에러 핸들링으로 이동
+//     }
+//     aux->file = mmap_file;
+//     aux->ofs = offset;
+//     aux->read_bytes = page_read_bytes;
+//     aux->zero_bytes = page_zero_bytes;
+//     if(!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, aux)) {
+//       free(aux);
+//       goto error; // [수정] 실패 시 에러 핸들링으로 이동
+//     }
+//     read_bytes -= page_read_bytes;
+//     zero_bytes -= page_zero_bytes;
+//     addr += PGSIZE;
+//     offset += page_read_bytes;
+//   }
+//   return start_addr;
+// // [추가] 롤백 로직: 실패 시 지금까지 만든 페이지 삭제 및 파일 닫기
+// error:
+//   // start_addr 부터 실패한 지점(addr) 전까지 돌면서 페이지 삭제
+//   while (start_addr < addr) {
+//     struct page *p = spt_find_page(&thread_current()->spt, start_addr);
+//     if (p) {
+//         spt_remove_page(&thread_current()->spt, p);
+//     }
+//     start_addr += PGSIZE;
+//   }
+//   file_close(mmap_file); // 열었던 파일 닫기 (누수 방지)
+//   return NULL;
+// }
 
 void
 do_munmap(void *addr) {
