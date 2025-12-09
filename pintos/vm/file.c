@@ -6,6 +6,7 @@
 #include "userprog/process.h"
 #include "threads/mmu.h"
 #include "lib/string.h"
+#include "threads/synch.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);

@@ -11,7 +11,7 @@
 #include "vm/vm.h"
 #include "vm/uninit.h"
 #include "userprog/process.h"
-
+#include "threads/malloc.h"
 static bool uninit_initialize (struct page *page, void *kva);
 static void uninit_destroy (struct page *page);
 
@@ -63,12 +63,12 @@ uninit_initialize (struct page *page, void *kva) {
  * to other page objects, it is possible to have uninit pages when the process
  * exit, which are never referenced during the execution.
  * PAGE will be freed by the caller. */
-static void
-uninit_destroy (struct page *page) {
-	struct uninit_page *uninit UNUSED = &page->uninit;
-	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
-}
+// static void
+// uninit_destroy (struct page *page) {
+// 	struct uninit_page *uninit UNUSED = &page->uninit;
+// 	/* TODO: Fill this function.
+// 	 * TODO: If you don't have anything to do, just return. */
+// }
 
 // static void uninit_destroy (struct page *page) {
 //   struct uninit_page *uninit = &page->uninit;
@@ -81,3 +81,14 @@ uninit_destroy (struct page *page) {
 //    free(aux);
 //   }
 // }
+static void
+uninit_destroy (struct page *page) {
+  struct uninit_page *uninit = &page->uninit;
+  
+  // aux 데이터(lazy_load_info)를 형변환해서 가져옴
+  struct lazy_load_info *aux = (struct lazy_load_info *) uninit->aux;
+    
+  if (aux != NULL) {
+    free(aux);
+  }
+}

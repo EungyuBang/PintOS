@@ -5,6 +5,7 @@
 #include "threads/vaddr.h"
 #include "lib/kernel/bitmap.h"
 #include "threads/synch.h"
+#include "lib/string.h"
 
 /* DO NOT MODIFY BELOW LINE */
 static bool anon_swap_in (struct page *page, void *kva);
@@ -38,7 +39,8 @@ vm_anon_init (void) {
 	}
 
 	// 전체 스왑 슬롯 수 계산
-	size_t swap_slot_cnt = disk_size(swap_disk) / (PGSIZE / DISK_SECTOR_SIZE);
+	// size_t swap_slot_cnt = disk_size(swap_disk) / (PGSIZE / DISK_SECTOR_SIZE);
+	size_t swap_slot_cnt = disk_size(swap_disk) / (SECTORS_PER_PAGE);
 	swap_table = bitmap_create(swap_slot_cnt);
 
 	lock_init(&swap_lock);
