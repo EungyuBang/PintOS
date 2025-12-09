@@ -20,7 +20,6 @@
 #include "intrinsic.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
-#include "lib/string.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -583,148 +582,159 @@ arg_load_stack(char *cmdline, struct intr_frame *if_) {
  * file_name: 실행할 유저 프로그램의 파일 이름
  * if_:       유저 프로그램이 시작될 때의 레지스터 상태를 저장하는 intr_frame
  */
+
 static bool
 load (const char *file_name, struct intr_frame *if_) {
-	struct thread *t = thread_current ();   // 현재 스레드 (실행할 프로세스)
-	struct ELF ehdr;                        // ELF 헤더 구조체
-	struct file *file = NULL;               // 실행 파일 포인터
-	off_t file_ofs;                         // 파일 오프셋
-	bool success = false;                   // 성공 여부
-	int i;
+  struct thread *t = thread_current ();   
+  struct ELF ehdr;                        
+  struct file *file = NULL;               
+  off_t file_ofs;                         
+  bool success = false;                   
+  int i;
 
-	char *cmd = palloc_get_page(0);
-	if(cmd == NULL) {
-		return false;
-	}
-	strlcpy(cmd, file_name, PGSIZE);
+  /* 1. 커맨드 파싱 및 메모리 할당 (기존 코드 유지) */
+  char *cmd = palloc_get_page(0);
+  if(cmd == NULL) return false;
+  strlcpy(cmd, file_name, PGSIZE);
 
-	char *save_ptr;
-	char *program_name = strtok_r(cmd, " ", &save_ptr);
-	if(program_name == NULL) {
-		palloc_free_page(cmd);
-		return false;
-	}
+  char *save_ptr;
+  char *program_name = strtok_r(cmd, " ", &save_ptr);
+  if(program_name == NULL) {
+    palloc_free_page(cmd);
+    return false;
+  }
 
-	// supplemental_page_table_init(&t->spt);
+  t->pml4 = pml4_create ();               
+  if (t->pml4 == NULL)
+    goto done;
+  process_activate (thread_current ());   
 
-	/* 1️⃣ 페이지 테이블 생성 및 활성화 */
-	t->pml4 = pml4_create ();               // 새 pml4(페이지 테이블) 생성
-	if (t->pml4 == NULL)
-		goto done;
-	process_activate (thread_current ());   // 새 페이지 테이블 활성화
+  /* ----------------------------------------------------------- */
+  /* 🔒 [수정] 파일 시스템 접근 시작: Lock 획득 */
+  /* ----------------------------------------------------------- */
+  lock_acquire(&filesys_lock);
 
-	/* 2️⃣ 실행 파일 열기 */
-	file = filesys_open (program_name);        // 파일 시스템에서 실행 파일 탐색 및 오픈
-	if (file == NULL) {
-		printf ("load: %s: open failed\n", program_name);
-		goto done;
-	}
+  /* 2️⃣ 실행 파일 열기 */
+  file = filesys_open (program_name);        
+  if (file == NULL) {
+    lock_release(&filesys_lock); // [수정] 실패 시 해제하고 이동
+    printf ("load: %s: open failed\n", program_name);
+    goto done;
+  }
 
-	/* 3️⃣ ELF 헤더 읽고 검증 */
-	// 실행 파일이 올바른 ELF 포맷인지 확인
-	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
-			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)   // ELF 매직 넘버 확인
-			|| ehdr.e_type != 2                           // 실행 파일 타입
-			|| ehdr.e_machine != 0x3E                     // x86-64 아키텍처
-			|| ehdr.e_version != 1
-			|| ehdr.e_phentsize != sizeof (struct Phdr)   // 프로그램 헤더 크기 확인
-			|| ehdr.e_phnum > 1024) {                     // 프로그램 헤더 개수 유효성
-		printf ("load: %s: error loading executable\n", program_name);
-		goto done;
-	}
+  /* 3️⃣ ELF 헤더 읽고 검증 */
+  if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
+      || memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)   
+      || ehdr.e_type != 2                           
+      || ehdr.e_machine != 0x3E                     
+      || ehdr.e_version != 1
+      || ehdr.e_phentsize != sizeof (struct Phdr)   
+      || ehdr.e_phnum > 1024) {                     
+    
+    lock_release(&filesys_lock); // [수정] 실패 시 해제하고 이동
+    printf ("load: %s: error loading executable\n", program_name);
+    goto done;
+  }
 
-	/* 4️⃣ 프로그램 헤더를 순회하며 세그먼트 로드 */
-	file_ofs = ehdr.e_phoff;                 // 프로그램 헤더 오프셋부터 읽기 시작
-	for (i = 0; i < ehdr.e_phnum; i++) {
-		struct Phdr phdr;
+  /* 4️⃣ 프로그램 헤더를 순회하며 세그먼트 로드 */
+  file_ofs = ehdr.e_phoff;                 
+  for (i = 0; i < ehdr.e_phnum; i++) {
+    struct Phdr phdr;
 
-		// 파일 범위 검증
-		if (file_ofs < 0 || file_ofs > file_length (file))
-			goto done;
-		file_seek (file, file_ofs);          // 해당 프로그램 헤더 위치로 이동
+    if (file_ofs < 0 || file_ofs > file_length (file)) {
+      lock_release(&filesys_lock); // [수정] 실패 시 해제
+      goto done;
+    }
+      
+    file_seek (file, file_ofs);          
 
-		// 프로그램 헤더 읽기
-		if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
-			goto done;
-		file_ofs += sizeof phdr;
+    if (file_read (file, &phdr, sizeof phdr) != sizeof phdr) {
+      lock_release(&filesys_lock); // [수정] 실패 시 해제
+      goto done;
+    }
+      
+    file_ofs += sizeof phdr;
 
-		// 세그먼트 타입에 따라 처리
-		switch (phdr.p_type) {
-			case PT_NULL:
-			case PT_NOTE:
-			case PT_PHDR:
-			case PT_STACK:
-			default:
-				/* 무시 가능한 세그먼트 */
-				break;
+    switch (phdr.p_type) {
+      case PT_NULL:
+      case PT_NOTE:
+      case PT_PHDR:
+      case PT_STACK:
+      default:
+        break;
 
-			case PT_DYNAMIC:
-			case PT_INTERP:
-			case PT_SHLIB:
-				/* 지원하지 않는 타입 → 실패 처리 */
-				goto done;
+      case PT_DYNAMIC:
+      case PT_INTERP:
+      case PT_SHLIB:
+        lock_release(&filesys_lock); // [수정] 실패 시 해제
+        goto done;
 
-			case PT_LOAD: {
-				/* 로드 가능한 세그먼트 → 메모리에 적재 */
-				if (validate_segment (&phdr, file)) {
-					bool writable = (phdr.p_flags & PF_W) != 0;  // 쓰기 가능 여부
-					uint64_t file_page = phdr.p_offset & ~PGMASK; // 파일 오프셋 페이지 단위
-					uint64_t mem_page  = phdr.p_vaddr & ~PGMASK;  // 가상주소 페이지 단위
-					uint64_t page_offset = phdr.p_vaddr & PGMASK; // 페이지 내 오프셋
-					uint32_t read_bytes, zero_bytes;
+      case PT_LOAD: {
+        if (validate_segment (&phdr, file)) {
+          bool writable = (phdr.p_flags & PF_W) != 0;  
+          uint64_t file_page = phdr.p_offset & ~PGMASK; 
+          uint64_t mem_page  = phdr.p_vaddr & ~PGMASK;  
+          uint64_t page_offset = phdr.p_vaddr & PGMASK; 
+          uint32_t read_bytes, zero_bytes;
 
-					if (phdr.p_filesz > 0) {
-						/* 일부는 파일에서 읽고, 나머지는 0으로 채움 (BSS 등) */
-						read_bytes = page_offset + phdr.p_filesz;
-						zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE)
-										- read_bytes);
-					} else {
-						/* 완전히 0으로 채워지는 세그먼트 */
-						read_bytes = 0;
-						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
-					}
+          if (phdr.p_filesz > 0) {
+            read_bytes = page_offset + phdr.p_filesz;
+            zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE) - read_bytes);
+          } else {
+            read_bytes = 0;
+            zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
+          }
 
-					/* 파일에서 메모리로 세그먼트 로드 */
-					if (!load_segment (file, file_page, (void *) mem_page, read_bytes, zero_bytes, writable))
-						goto done;
-				} else
-					goto done;
-				break;
-			}
-		}
-	}
+          if (!load_segment (file, file_page, (void *) mem_page, read_bytes, zero_bytes, writable)) {
+             lock_release(&filesys_lock); // [수정] 실패 시 해제
+             goto done;
+          }
+        } else {
+          lock_release(&filesys_lock); // [수정] 실패 시 해제
+          goto done;
+        }
+        break;
+      }
+    }
+  }
 
-	/* 5️⃣ 유저 스택 설정 */
-	if (!setup_stack (if_))
+  /* ----------------------------------------------------------- */
+  /* 🔓 [수정] 파일 읽기 루프 종료 후 Lock 해제 */
+  /* ----------------------------------------------------------- */
+  lock_release(&filesys_lock);
 
-		goto done;
+  /* 5️⃣ 유저 스택 설정 */
+  if (!setup_stack (if_))
+    goto done;
 
-	/* 6️⃣ 실행 시작 주소 설정 */
-	if_->rip = ehdr.e_entry;   // ELF 진입점 (main 함수 시작 주소)
+  /* 6️⃣ 실행 시작 주소 설정 */
+  if_->rip = ehdr.e_entry;   
 
-	/* TODO: 인자 전달 구현 (argument passing) */
-	// - 프로젝트 2에서 argv, argc 스택에 적재하는 부분 구현 예정
-	success = arg_load_stack(file_name, if_);
+  /* 인자 전달 */
+  success = arg_load_stack(file_name, if_);
 
 done:
     /* 1. 로딩 성공 시 처리 */
-		// 10주차 rox
     if (success) {
-        t->running_file = file; // 스레드 구조체에 저장
-        file_deny_write(file);  // 쓰기 방지 설정     
+        // running_file 설정 및 쓰기 방지도 안전하게 Lock 권장
+        lock_acquire(&filesys_lock);
+        t->running_file = file; 
+        file_deny_write(file);      
+        lock_release(&filesys_lock);
     } 
     /* 2. 로딩 실패 시 처리 */
     else {
         if (file != NULL) {
-            file_close(file); // 실패했으니 닫아줌
+            // 파일 닫을 때도 Lock 필요
+            lock_acquire(&filesys_lock);
+            file_close(file); 
+            lock_release(&filesys_lock);
         }
     }
 
     palloc_free_page(cmd);
     return success;
 }
-
-
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */

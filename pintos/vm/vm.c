@@ -3,12 +3,14 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
-#include "lib/kernel/hash.h"
+#include "kernel/hash.h"
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
 #include "userprog/process.h"
-#include "include/lib/string.h"
+#include "lib/string.h"
 #include "filesys/file.h"
+#include "list.h"
+#include "threads/synch.h"
 
 struct list frame_table;
 struct list_elem *victim_select;

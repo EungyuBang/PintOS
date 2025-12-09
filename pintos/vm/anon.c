@@ -26,6 +26,7 @@ static const struct page_operations anon_ops = {
 };
 
 static struct lock swap_lock;
+extern struct lock frame_lock;
 
 /* Initialize the data for anonymous pages */
 // 11주차 익명 페이지용 초기화 함수
