@@ -168,7 +168,6 @@ vm_get_victim (void) {
 	}
 	while(true) {
 		struct frame *candidate = list_entry(victim_select, struct frame, frame_elem);
-
 		// access bit 확인했는데 1 (최근에 사용 됐다는 거임) -> 조건문 실행 
 		if(pml4_is_accessed(candidate->frame_owner->pml4, candidate->page->va)) {
 			// access bit 0으로 바꿔주기 
@@ -236,7 +235,6 @@ vm_get_frame (void) {
 		frame->page = NULL;
 		frame->frame_owner = thread_current();	
 
-		memset(frame->kva, 0, PGSIZE);
 		return frame;
 	}
 
@@ -341,6 +339,10 @@ vm_do_claim_page (struct page *page) {
 	// frame 할당
 	struct frame *frame = vm_get_frame ();
 
+	if(frame == NULL) {
+		return false;
+	}
+
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
@@ -408,10 +410,13 @@ supplemental_page_table_copy (struct supplemental_page_table *dst, struct supple
     /* 2. 이미 로드된 페이지 (VM_FILE, VM_ANON) */
     else {
       if (!vm_alloc_page (type, upage, writable)) return false;
-
       if (!vm_claim_page (upage)) return false;
 
       struct page *dst_page = spt_find_page (dst, upage);
+
+			// if(src_page->frame == NULL) {
+			// 	vm_do_claim_page(src_page);
+			// }
             
       // 물리 메모리 내용 복사
       memcpy (dst_page->frame->kva, src_page->frame->kva, PGSIZE);

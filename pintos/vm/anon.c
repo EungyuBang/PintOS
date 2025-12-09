@@ -77,7 +77,7 @@ anon_swap_in (struct page *page, void *kva) {
 
   // disk -> memory 로 데이터 옮기기
   for(int i = 0 ; i < SECTORS_PER_PAGE; i++) {
-    disk_read(swap_disk, slot_idx * SECTORS_PER_PAGE + i, kva + (DISK_SECTOR_SIZE * i));
+    disk_read(swap_disk, (slot_idx * SECTORS_PER_PAGE) + i, kva + (DISK_SECTOR_SIZE * i));
   }
   
   // 스왑 슬롯 비우기

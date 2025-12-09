@@ -65,10 +65,10 @@ file_backed_swap_out (struct page *page) {
     if (!lock_held) lock_acquire(&filesys_lock);      
     file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);       
     if (!lock_held) lock_release(&filesys_lock);
-    pml4_set_dirty(owner->pml4, page->va, 0);
+    pml4_set_dirty(owner->pml4, page->va, false);
     }
     
-    return true;
+  return true;
 }
 
 
@@ -89,7 +89,7 @@ file_backed_destroy (struct page *page) {
             
       if (!lock_held) lock_release(&filesys_lock);
             
-      pml4_set_dirty(thread_current()->pml4, page->va, 0);
+      pml4_set_dirty(thread_current()->pml4, page->va, false);
     }
     pml4_clear_page(thread_current()->pml4, page->va);
   }
