@@ -49,7 +49,7 @@ file_backed_swap_in (struct page *page, void *kva) {
 		return false;
 	}
 
-	memset(kva + file_page->read_bytes, 0, file_page->zero_bytes);
+	memset((uint8_t *)kva + file_page->read_bytes, 0, file_page->zero_bytes);
 	lock_release(&filesys_lock);
 
 	return true;
@@ -105,13 +105,23 @@ file_backed_destroy (struct page *page) {
 void *
 do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) 
 {
+  bool lock_held = lock_held_by_current_thread(&filesys_lock);
+
+  if(!lock_held) lock_acquire(&filesys_lock);
+
 	struct file *mmap_file = file_reopen(file);
-	if(mmap_file == NULL) return NULL;
+
+	if(mmap_file == NULL) {
+    if(!lock_held) lock_release(&filesys_lock);
+    return NULL;
+  }
 
 	void *start_addr = addr;
 
 	size_t file_len = file_length(file);
 
+  if(!lock_held) lock_release(&filesys_lock);
+  
 	if(file_len <= offset || length == 0) return NULL;
 
 	if (file_len < length + offset) {
@@ -137,6 +147,7 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 			free(aux);
 			return NULL;
 		}
+    
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		addr += PGSIZE;
@@ -210,5 +221,8 @@ do_munmap(void *addr) {
     	page = spt_find_page(spt, next_addr);
   }
     /* 4. 마지막에 파일 닫기 */
+  bool lock_held = lock_held_by_current_thread(&filesys_lock); 
+  if(!lock_held) lock_acquire(&filesys_lock);
   file_close(target_file);
+  if(!lock_held) lock_release(&filesys_lock);
 }

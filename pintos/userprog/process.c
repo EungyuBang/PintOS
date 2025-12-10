@@ -387,7 +387,7 @@ process_exit (void) {
 	 // mmap
 	 process_cleanup();
 
-	 	// 10주차 rox
+	// 10주차 rox
 	 if (cur_thread->running_file != NULL) {
 			bool lock_held = lock_held_by_current_thread(&filesys_lock);
       if (!lock_held) lock_acquire(&filesys_lock);  

@@ -195,7 +195,6 @@ vm_get_victim (void) {
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
-// 
 static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
