@@ -1,24 +1,26 @@
-# 📘 Docker기반 Pintos 개발 환경 구축 가이드 
+# 📘 Docker기반 Pintos 개발 환경 구축 가이드
 
 이 문서는 **Windows**와 **macOS** 사용자가 Docker와 VSCode DevContainer 기능을 활용하여 Pintos OS 프로젝트를 빠르게 구축할 수 있도록 도와줍니다.
 
 [**주의**]
-* ubunbu:22.04 버전은 충분한 테스트와 검증이 되지 않았습니다. 이 점을 주의해서 사용하시기 바랍니다.
 
-[**참고**] 
-* pintos 도커 환경은 `64비트 기반 X86-64` 기반의 `ubuntu:22.04` 버전을 사용합니다.
-   * kaist-pintos는 오리지널 pintos와 달리 64비트 환경을 지원합니다.
-   * 이번 도커 환경은 ubuntu 22.04를 지원하여 vscode의 최신 버전에서 원격 연결이 안되는 문제를 해결하였습니다.
-* pintos 도커 환경은 kaist-pintos에서 추천하는 qemu 에뮬레이터를 설치하고 사용합니다. 
-* pintos 도커 환경은 9주차부터 13주차까지 같은 환경을 사용합니다. 이 기간동안 별도의 개발 환경을 제공하지 않습니다.
-* 기존 도커 환경과 달리 `vscode`와 통합된 디버깅 환경(F5로 시작하는)을 제공하지 않습니다. 디버깅이 필요한 경우 `gdb`를 사용하세요. 
-* vscode에서 터미널을 오픈하면 자동으로 `source /workspaces/pintos_22.04_lab_docker/pintos/activate`를 실행합니다.
+- ubunbu:22.04 버전은 충분한 테스트와 검증이 되지 않았습니다. 이 점을 주의해서 사용하시기 바랍니다.
+
+[**참고**]
+
+- pintos 도커 환경은 `64비트 기반 X86-64` 기반의 `ubuntu:22.04` 버전을 사용합니다.
+  - kaist-pintos는 오리지널 pintos와 달리 64비트 환경을 지원합니다.
+  - 이번 도커 환경은 ubuntu 22.04를 지원하여 vscode의 최신 버전에서 원격 연결이 안되는 문제를 해결하였습니다.
+- pintos 도커 환경은 kaist-pintos에서 추천하는 qemu 에뮬레이터를 설치하고 사용합니다.
+- pintos 도커 환경은 9주차부터 13주차까지 같은 환경을 사용합니다. 이 기간동안 별도의 개발 환경을 제공하지 않습니다.
+- 기존 도커 환경과 달리 `vscode`와 통합된 디버깅 환경(F5로 시작하는)을 제공하지 않습니다. 디버깅이 필요한 경우 `gdb`를 사용하세요.
+- vscode에서 터미널을 오픈하면 자동으로 `source /workspaces/pintos_22.04_lab_docker/pintos/activate`를 실행합니다.
 
 ---
 
 ## 1. Docker란 무엇인가요?
 
-**Docker**는 애플리케이션을 어떤 컴퓨터에서든 **동일한 환경에서 실행**할 수 있게 도와주는 **가상화 플랫폼**입니다.  
+**Docker**는 애플리케이션을 어떤 컴퓨터에서든 **동일한 환경에서 실행**할 수 있게 도와주는 **가상화 플랫폼**입니다.
 
 Docker는 다음 구성요소로 이루어져 있습니다:
 
@@ -28,11 +30,11 @@ Docker는 다음 구성요소로 이루어져 있습니다:
 
 ### ✅ AWS EC2와의 차이점
 
-| 구분 | EC2 같은 VM | Docker 컨테이너 |
-|------|-------------|-----------------|
-| 실행 단위 | OS 포함 전체 | 애플리케이션 단위 |
-| 실행 속도 | 느림 (수십 초 이상) | 매우 빠름 (거의 즉시) |
-| 리소스 사용 | 무거움 | 가벼움 |
+| 구분        | EC2 같은 VM         | Docker 컨테이너       |
+| ----------- | ------------------- | --------------------- |
+| 실행 단위   | OS 포함 전체        | 애플리케이션 단위     |
+| 실행 속도   | 느림 (수십 초 이상) | 매우 빠름 (거의 즉시) |
+| 리소스 사용 | 무거움              | 가벼움                |
 
 ---
 
@@ -51,8 +53,8 @@ Docker는 다음 구성요소로 이루어져 있습니다:
 1. Docker 공식 사이트에서 설치 파일 다운로드:  
    👉 [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
 
-2. 설치 후 Docker Desktop 실행  
-   - Windows: Docker 아이콘이 트레이에 떠야 함  
+2. 설치 후 Docker Desktop 실행
+   - Windows: Docker 아이콘이 트레이에 떠야 함
    - macOS: 상단 메뉴바에 Docker 아이콘 확인
 
 ---
@@ -62,7 +64,7 @@ Docker는 다음 구성요소로 이루어져 있습니다:
 터미널(CMD, PowerShell, zsh 등)에서 아래 명령어로 프로젝트 폴더만 내려받습니다:
 
 ```bash
-git clone --depth=1 https://github.com/krafton-jungle/pintos_22.04_lab_docker.git 
+git clone --depth=1 https://github.com/krafton-jungle/pintos_22.04_lab_docker.git
 ```
 
 - `--depth=1` 옵션은 git commit 히스토리를 생략하고 **최신 파일만 가져옵니다.**
@@ -82,6 +84,7 @@ pintos_22.04_lab_docker/
 │
 └── README.md                  # 현재 문서
 ```
+
 ---
 
 ## 5. VSCode에서 해당 프로젝트 폴더 열기
@@ -100,9 +103,11 @@ pintos_22.04_lab_docker/
 ---
 
 ## 7. C 파일에 브레이크포인트 설정 후 디버깅 (F5)
-pintos 랩에서는 vscode기반의 디버깅을 지원하지 않습니다. 
+
+pintos 랩에서는 vscode기반의 디버깅을 지원하지 않습니다.
 
 ---
+
 ## 8. 새로운 Git 리포지토리에 Commit & Push 하기
 
 금주 프로젝트를 개인 Git 리포와 같은 다른 리포지토리에 업로드하려면, 기존 Git 연결을 제거하고 새롭게 초기화해야 합니다.
@@ -129,3 +134,5 @@ git push -u origin main
 - `git push`: 새로운 리포에 최초 업로드(Push)합니다.
 
 이 과정을 거치면 기존 리포와의 연결은 완전히 제거되고, **새로운 독립적인 프로젝트로 관리**할 수 있습니다.
+
+PintOS
